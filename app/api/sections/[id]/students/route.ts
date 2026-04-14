@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { logAction } from '@/lib/audit/log-action';
 
 // Roster for a single section — ordered by index number (immutable).
 export async function GET(
@@ -129,14 +130,37 @@ export async function POST(
     .maybeSingle();
   const nextIndex = (maxRow?.index_number ?? 0) + 1;
 
-  const { error: enrErr } = await service.from('section_students').insert({
-    section_id: sectionId,
-    student_id: studentId,
-    index_number: nextIndex,
-    enrollment_status,
-    enrollment_date: new Date().toISOString().slice(0, 10),
+  const { data: enrolmentRow, error: enrErr } = await service
+    .from('section_students')
+    .insert({
+      section_id: sectionId,
+      student_id: studentId,
+      index_number: nextIndex,
+      enrollment_status,
+      enrollment_date: new Date().toISOString().slice(0, 10),
+    })
+    .select('id')
+    .single();
+  if (enrErr || !enrolmentRow) {
+    return NextResponse.json({ error: enrErr?.message ?? 'enrolment failed' }, { status: 500 });
+  }
+
+  await logAction({
+    service,
+    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    action: 'student.add',
+    entityType: 'section_student',
+    entityId: enrolmentRow.id,
+    context: {
+      student_number,
+      section_id: sectionId,
+      index_number: nextIndex,
+      enrollment_status,
+      last_name,
+      first_name,
+      middle_name,
+    },
   });
-  if (enrErr) return NextResponse.json({ error: enrErr.message }, { status: 500 });
 
   return NextResponse.json({ success: true, student_id: studentId, index_number: nextIndex });
 }

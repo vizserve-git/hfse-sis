@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { logAction } from '@/lib/audit/log-action';
 
 // GET /api/sections/[id]/attendance?term_id=...
 // Returns one row per enrolment in the section with the attendance record for
@@ -91,17 +92,50 @@ export async function PUT(request: NextRequest) {
   };
 
   const service = createServiceClient();
-  const { error } = await service.from('attendance_records').upsert(
-    {
+  const next = {
+    school_days: norm(body.school_days),
+    days_present: norm(body.days_present),
+    days_late: norm(body.days_late),
+  };
+
+  // Load existing row for diff in the audit log (best-effort).
+  const { data: before } = await service
+    .from('attendance_records')
+    .select('school_days, days_present, days_late')
+    .eq('term_id', body.term_id)
+    .eq('section_student_id', body.section_student_id)
+    .maybeSingle();
+
+  const { data: upserted, error } = await service
+    .from('attendance_records')
+    .upsert(
+      {
+        term_id: body.term_id,
+        section_student_id: body.section_student_id,
+        ...next,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'term_id,section_student_id' },
+    )
+    .select('id')
+    .single();
+  if (error || !upserted) {
+    return NextResponse.json({ error: error?.message ?? 'upsert failed' }, { status: 500 });
+  }
+
+  await logAction({
+    service,
+    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    action: 'attendance.update',
+    entityType: 'attendance_record',
+    entityId: upserted.id,
+    context: {
       term_id: body.term_id,
       section_student_id: body.section_student_id,
-      school_days: norm(body.school_days),
-      days_present: norm(body.days_present),
-      days_late: norm(body.days_late),
-      updated_at: new Date().toISOString(),
+      before: before ?? null,
+      after: next,
     },
-    { onConflict: 'term_id,section_student_id' },
-  );
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  });
+
   return NextResponse.json({ ok: true });
 }

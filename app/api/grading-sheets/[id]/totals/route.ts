@@ -3,6 +3,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { computeQuarterly } from '@/lib/compute/quarterly';
 import { buildTotalsAuditRows, writeAuditRows } from '@/lib/audit/log-grade-change';
+import { logAction } from '@/lib/audit/log-action';
 
 // PATCH /api/grading-sheets/[id]/totals — registrar+ only.
 // Updates WW/PT/QA max totals on a sheet. Post-lock requires approval_reference.
@@ -138,23 +139,38 @@ export async function PATCH(
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Audit-log the totals change (post-lock only).
-  if (sheet.is_locked) {
-    const approval_reference = body.approval_reference!.trim();
-    const changed_by = auth.user.email ?? auth.user.id;
-    // Totals aren't scoped to a single grade_entry — reuse the first entry's id
-    // as the FK (required NOT NULL) and scope via field_changed string.
-    const anchor = (entries ?? [])[0]?.id;
-    if (anchor) {
-      await writeAuditRows(
-        service,
-        buildTotalsAuditRows(before, after, {
-          grading_sheet_id: sheetId,
-          grade_entry_id: anchor,
-          changed_by,
-          approval_reference,
-        }),
-      );
+  // Audit-log the totals change (pre-lock AND post-lock in the new generic
+  // audit_log; still also write post-lock to grade_audit_log for backward compat).
+  const approval_reference = body.approval_reference?.trim() ?? '';
+  const changed_by = auth.user.email ?? auth.user.id;
+  const anchor = (entries ?? [])[0]?.id;
+  if (anchor) {
+    const totalsDiff = buildTotalsAuditRows(before, after, {
+      grading_sheet_id: sheetId,
+      grade_entry_id: anchor,
+      changed_by,
+      approval_reference,
+    });
+    if (totalsDiff.length > 0) {
+      if (sheet.is_locked) {
+        await writeAuditRows(service, totalsDiff);
+      }
+      for (const row of totalsDiff) {
+        await logAction({
+          service,
+          actor: { id: auth.user.id, email: auth.user.email ?? null },
+          action: 'totals.update',
+          entityType: 'grading_sheet',
+          entityId: sheetId,
+          context: {
+            field: row.field_changed,
+            old: row.old_value,
+            new: row.new_value,
+            was_locked: sheet.is_locked,
+            ...(sheet.is_locked ? { approval_reference } : {}),
+          },
+        });
+      }
     }
   }
 

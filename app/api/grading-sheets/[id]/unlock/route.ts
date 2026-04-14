@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
+import { logAction } from '@/lib/audit/log-action';
 
 // POST /api/grading-sheets/[id]/unlock — registrar+ only.
 // Unlocking restores teacher edit access. The audit log is NEVER purged;
@@ -29,5 +30,15 @@ export async function POST(
   if (error || !data) {
     return NextResponse.json({ error: error?.message ?? 'unlock failed' }, { status: 500 });
   }
+
+  await logAction({
+    service,
+    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    action: 'sheet.unlock',
+    entityType: 'grading_sheet',
+    entityId: id,
+    context: {},
+  });
+
   return NextResponse.json({ sheet: data });
 }

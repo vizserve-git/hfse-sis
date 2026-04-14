@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAdmissionsRoster } from '@/lib/supabase/admissions';
 import { loadGradingSnapshot } from '@/lib/sync/snapshot';
 import { buildSyncPlan } from '@/lib/sync/students';
+import { logAction } from '@/lib/audit/log-action';
 
 // Commit endpoint — applies the sync plan to the grading DB.
 // Hard rules:
@@ -97,6 +98,23 @@ export async function POST() {
         .eq('id', change.enrollment_id);
       if (error) throw new Error(`enrollment status update failed: ${error.message}`);
     }
+
+    await logAction({
+      service,
+      actor: { id: auth.user.id, email: auth.user.email ?? null },
+      action: 'student.sync',
+      entityType: 'sync_batch',
+      entityId: null,
+      context: {
+        ay_code: ayCode,
+        added: plan.stats.students_to_add,
+        updated: plan.stats.students_to_update,
+        enrolled: plan.stats.enrollments_to_add,
+        withdrawn: plan.stats.enrollments_to_withdraw,
+        reactivated: plan.stats.enrollments_to_reactivate,
+        errors: plan.errors.length,
+      },
+    });
 
     return NextResponse.json({
       success: true,

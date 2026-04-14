@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { PublishWindowPanel } from '@/components/admin/publish-window-panel';
 import { cn } from '@/lib/utils';
 
 type LevelLite = { id: string; code: string; label: string; level_type: 'primary' | 'secondary' };
@@ -49,6 +50,16 @@ export default async function ReportCardsListPage({
   }
   const sortedLevels = Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b));
 
+  // Terms for the current AY (used by the publish window panel when a
+  // section is selected — parents only see terms with an active publication).
+  const { data: terms } = ay
+    ? await supabase
+        .from('terms')
+        .select('id, term_number, label')
+        .eq('academic_year_id', ay.id)
+        .order('term_number')
+    : { data: [] };
+
   let selectedRows: Array<{
     enrolment_id: string;
     index_number: number;
@@ -58,6 +69,7 @@ export default async function ReportCardsListPage({
     withdrawn: boolean;
   }> = [];
   let selectedLabel: string | null = null;
+  let selectedSectionName: string | null = null;
   if (q.section_id) {
     const { data: sec } = await supabase
       .from('sections')
@@ -67,6 +79,7 @@ export default async function ReportCardsListPage({
     if (sec) {
       const lvl = first(sec.level as { label: string } | { label: string }[] | null);
       selectedLabel = `${lvl?.label ?? ''} ${sec.name}`.trim();
+      selectedSectionName = selectedLabel;
     }
     const { data: enrolments } = await supabase
       .from('section_students')
@@ -140,6 +153,14 @@ export default async function ReportCardsListPage({
           ))}
         </div>
       </Surface>
+
+      {q.section_id && selectedSectionName && (terms ?? []).length > 0 && (
+        <PublishWindowPanel
+          sectionId={q.section_id}
+          sectionName={selectedSectionName}
+          terms={terms ?? []}
+        />
+      )}
 
       {selectedLabel && (
         <div className="space-y-3">

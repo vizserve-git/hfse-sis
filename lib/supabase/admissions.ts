@@ -86,3 +86,92 @@ export async function fetchAdmissionsRoster(ayCode: string): Promise<AdmissionsR
   }
   return out;
 }
+
+// Row shape returned when looking up a parent's children.
+export type ParentStudentRow = {
+  student_number: string;
+  last_name: string;
+  first_name: string;
+  middle_name: string | null;
+  class_level: string | null;
+  class_section: string | null;
+};
+
+// Find every student in a given academic year whose mother OR father email in
+// `ay{YY}_enrolment_applications` matches the given email. Used by the parent
+// landing page to resolve a signed-in parent's auth.users.email to their
+// child/children in admissions. Service-role client — not subject to grading
+// RLS and not visible to parent-side JS directly.
+export async function getStudentsByParentEmail(
+  email: string,
+  ayCode: string,
+): Promise<ParentStudentRow[]> {
+  const lower = email.trim().toLowerCase();
+  if (!lower) return [];
+  const year = ayCode.replace(/^AY/i, '').toLowerCase();
+  const appsTable = `ay${year}_enrolment_applications`;
+  const statusTable = `ay${year}_enrolment_status`;
+
+  const supabase = createAdmissionsClient();
+
+  // 1) Find enrolee rows whose parent emails match.
+  const { data: apps, error: appsErr } = await supabase
+    .from(appsTable)
+    .select('enroleeNumber, studentNumber, lastName, firstName, middleName, motherEmail, fatherEmail')
+    .or(`motherEmail.eq.${lower},fatherEmail.eq.${lower}`);
+  if (appsErr) {
+    // Admissions schema drift or missing columns — fail soft so the parent
+    // still gets a "no records found" page instead of a hard crash.
+    console.error('[admissions] parent email lookup failed:', appsErr.message);
+    return [];
+  }
+  type AppRow = {
+    enroleeNumber: string | null;
+    studentNumber: string | null;
+    lastName: string | null;
+    firstName: string | null;
+    middleName: string | null;
+    motherEmail: string | null;
+    fatherEmail: string | null;
+  };
+  const rows = (apps ?? []) as AppRow[];
+  const enroleeNumbers = rows.map((r) => r.enroleeNumber).filter((x): x is string => !!x);
+  if (enroleeNumbers.length === 0) return [];
+
+  // 2) Pull class info from status table for the same enrolees in this AY.
+  const { data: statuses, error: statusErr } = await supabase
+    .from(statusTable)
+    .select('enroleeNumber, classLevel, classSection, applicationStatus')
+    .in('enroleeNumber', enroleeNumbers)
+    .not('classSection', 'is', null)
+    .not('applicationStatus', 'in', '("Cancelled","Withdrawn")');
+  if (statusErr) {
+    console.error('[admissions] parent status lookup failed:', statusErr.message);
+    return [];
+  }
+  type StatusRow = {
+    enroleeNumber: string | null;
+    classLevel: string | null;
+    classSection: string | null;
+  };
+  const statusByEnrolee = new Map<string, StatusRow>();
+  for (const s of (statuses ?? []) as StatusRow[]) {
+    if (s.enroleeNumber) statusByEnrolee.set(s.enroleeNumber, s);
+  }
+
+  const out: ParentStudentRow[] = [];
+  for (const r of rows) {
+    if (!r.studentNumber || !r.enroleeNumber) continue;
+    const s = statusByEnrolee.get(r.enroleeNumber);
+    if (!s) continue; // not enrolled in this AY
+    out.push({
+      student_number: r.studentNumber,
+      last_name: r.lastName ?? '',
+      first_name: r.firstName ?? '',
+      middle_name: r.middleName ?? null,
+      class_level: s.classLevel,
+      class_section: s.classSection,
+    });
+  }
+  return out;
+}

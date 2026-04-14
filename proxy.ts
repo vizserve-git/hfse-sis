@@ -18,16 +18,33 @@ export async function proxy(request: NextRequest) {
 
   if (user && pathname === '/login') {
     const url = request.nextUrl.clone();
-    url.pathname = '/';
+    const role = getUserRole(user);
+    url.pathname = role === null ? '/parent' : '/';
     return NextResponse.redirect(url);
   }
 
   if (user) {
     const role = getUserRole(user);
-    if (!isRouteAllowed(pathname, role)) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/';
-      return NextResponse.redirect(url);
+    if (role === null) {
+      // Parent user (no staff role in app_metadata.role). Only /parent/*,
+      // /account, and /login are allowed. Everything else redirects to /parent.
+      const isParentPath =
+        pathname === '/parent' ||
+        pathname.startsWith('/parent/') ||
+        pathname === '/account' ||
+        pathname === '/login';
+      if (!isParentPath) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/parent';
+        return NextResponse.redirect(url);
+      }
+    } else {
+      // Staff user — existing role-based route gate.
+      if (!isRouteAllowed(pathname, role)) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/';
+        return NextResponse.redirect(url);
+      }
     }
   }
 

@@ -4,6 +4,7 @@ import { getUserRole } from '@/lib/auth/roles';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { loadAssignmentsForUser, isFormAdviser } from '@/lib/auth/teacher-assignments';
+import { logAction } from '@/lib/audit/log-action';
 
 // GET /api/sections/[id]/comments?term_id=...
 // Returns one row per active student in the section, with their comment for
@@ -107,7 +108,16 @@ export async function PUT(
   const comment = (body.comment ?? '').toString().trim() || null;
 
   const service = createServiceClient();
-  const { error } = await service
+
+  const { data: before } = await service
+    .from('report_card_comments')
+    .select('id, comment')
+    .eq('term_id', body.term_id)
+    .eq('section_id', sectionId)
+    .eq('student_id', body.student_id)
+    .maybeSingle();
+
+  const { data: upserted, error } = await service
     .from('report_card_comments')
     .upsert(
       {
@@ -118,8 +128,27 @@ export async function PUT(
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'term_id,section_id,student_id' },
-    );
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    )
+    .select('id')
+    .single();
+  if (error || !upserted) {
+    return NextResponse.json({ error: error?.message ?? 'upsert failed' }, { status: 500 });
+  }
+
+  await logAction({
+    service,
+    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    action: 'comment.update',
+    entityType: 'report_card_comment',
+    entityId: upserted.id,
+    context: {
+      term_id: body.term_id,
+      section_id: sectionId,
+      student_id: body.student_id,
+      before: before?.comment ?? null,
+      after: comment,
+    },
+  });
 
   return NextResponse.json({ ok: true });
 }

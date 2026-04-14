@@ -4,6 +4,7 @@ import { getUserRole } from '@/lib/auth/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 import { computeQuarterly } from '@/lib/compute/quarterly';
 import { buildAuditRows, writeAuditRows } from '@/lib/audit/log-grade-change';
+import { logAction } from '@/lib/audit/log-action';
 
 // PATCH /api/grading-sheets/[id]/entries/[entryId]
 // Rules (Sprint 4):
@@ -108,15 +109,32 @@ export async function PATCH(
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    if (sheet.is_locked) {
-      await writeAuditRows(
-        service,
-        buildAuditRows(
-          { letter_grade: entry.letter_grade as string | null },
-          { letter_grade: letter },
-          { grading_sheet_id: sheetId, grade_entry_id: entryId, changed_by, approval_reference },
-        ),
-      );
+    const letterDiff = buildAuditRows(
+      { letter_grade: entry.letter_grade as string | null },
+      { letter_grade: letter },
+      { grading_sheet_id: sheetId, grade_entry_id: entryId, changed_by, approval_reference },
+    );
+    if (letterDiff.length > 0) {
+      if (sheet.is_locked) {
+        await writeAuditRows(service, letterDiff);
+      }
+      for (const row of letterDiff) {
+        await logAction({
+          service,
+          actor: { id: auth.user.id, email: auth.user.email ?? null },
+          action: 'entry.update',
+          entityType: 'grade_entry',
+          entityId: entryId,
+          context: {
+            grading_sheet_id: sheetId,
+            field: row.field_changed,
+            old: row.old_value,
+            new: row.new_value,
+            was_locked: sheet.is_locked,
+            ...(sheet.is_locked ? { approval_reference } : {}),
+          },
+        });
+      }
     }
     return NextResponse.json({ entry: updated });
   }
@@ -204,21 +222,40 @@ export async function PATCH(
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Audit-log every changed field (post-lock only).
-  if (sheet.is_locked) {
-    await writeAuditRows(
-      service,
-      buildAuditRows(
-        {
-          ww_scores: entry.ww_scores as (number | null)[] | null,
-          pt_scores: entry.pt_scores as (number | null)[] | null,
-          qa_score: entry.qa_score as number | null,
-          is_na: entry.is_na as boolean,
+  // Audit-log every changed field (pre-lock AND post-lock in the new
+  // generic audit_log; still also write post-lock to grade_audit_log for
+  // backward compat during the first term on the new system).
+  const diffRows = buildAuditRows(
+    {
+      ww_scores: entry.ww_scores as (number | null)[] | null,
+      pt_scores: entry.pt_scores as (number | null)[] | null,
+      qa_score: entry.qa_score as number | null,
+      is_na: entry.is_na as boolean,
+    },
+    { ww_scores, pt_scores, qa_score, is_na },
+    { grading_sheet_id: sheetId, grade_entry_id: entryId, changed_by, approval_reference },
+  );
+  if (diffRows.length > 0) {
+    if (sheet.is_locked) {
+      await writeAuditRows(service, diffRows);
+    }
+    for (const row of diffRows) {
+      await logAction({
+        service,
+        actor: { id: auth.user.id, email: auth.user.email ?? null },
+        action: 'entry.update',
+        entityType: 'grade_entry',
+        entityId: entryId,
+        context: {
+          grading_sheet_id: sheetId,
+          field: row.field_changed,
+          old: row.old_value,
+          new: row.new_value,
+          was_locked: sheet.is_locked,
+          ...(sheet.is_locked ? { approval_reference } : {}),
         },
-        { ww_scores, pt_scores, qa_score, is_na },
-        { grading_sheet_id: sheetId, grade_entry_id: entryId, changed_by, approval_reference },
-      ),
-    );
+      });
+    }
   }
 
   return NextResponse.json({ entry: updated, computed });

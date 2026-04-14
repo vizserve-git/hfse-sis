@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { logAction } from '@/lib/audit/log-action';
 
 // GET /api/teacher-assignments?section_id=... — list assignments.
 // Managers (registrar+) see all; any other authenticated user can request
@@ -96,6 +97,20 @@ export async function POST(request: NextRequest) {
       // swallow — the assignment is authoritative
     }
   }
+
+  await logAction({
+    service,
+    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    action: 'assignment.create',
+    entityType: 'teacher_assignment',
+    entityId: data.id,
+    context: {
+      teacher_user_id: data.teacher_user_id,
+      section_id: data.section_id,
+      subject_id: data.subject_id,
+      role: data.role,
+    },
+  });
 
   return NextResponse.json({ assignment: data });
 }

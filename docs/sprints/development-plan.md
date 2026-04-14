@@ -15,7 +15,7 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 | 3 | Grade Entry | 🔶 Mostly done (comparison column deferred) |
 | 4 | Locking & Audit Trail | 🔶 Mostly done (blank-counts dashboard pending; `is_na` has API but no UI toggle) |
 | 5 | Comments, Attendance & Report Card Data | 🔶 Done with deferrals (Sec 3–4 profile, attendance import) |
-| 6 | PDF Generation & Polish | 🔶 PDF service deferred; **design system pass Bite 1 shipped** (Bites 2–5 in progress); Vercel deploy still pending |
+| 6 | PDF Generation & Polish | 🔶 PDF service deferred; design system fully revamped ("Digital Ledger" on shadcn); RLS tightened (004+005); **Vercel live; registrar UAT in progress** |
 | — | Teacher Assignments _(added mid-flight)_ | ✅ Done — `teacher_assignments` table + CRUD UI + gates on grading list & comments |
 | 7 | Admissions Dashboard (Phase 2) | ⏸️ Not started |
 
@@ -23,7 +23,6 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 
 These came up during sprints but were intentionally deferred to keep scope tight:
 
-- Tighten per-table RLS policies (Sprint 1 shipped permissive `authenticated`-read; revisit before production)
 - Previous-term comparison column on the grade entry grid (Sprint 3)
 - Dedicated UI toggle for the `is_na` late-enrollee flag (Sprint 4)
 - Registrar "sheets with blanks remaining" summary dashboard (Sprint 4)
@@ -283,24 +282,40 @@ def compute_quarterly_grade(
 - [x] Input validation on all grade entry fields _(server-side range checks; client-side blank-vs-zero preserved)_
 - [ ] Mobile-responsive layout (at minimum tablet-friendly for teachers entering grades) _(deferred — desktop-only for now)_
 - [x] User management: teachers created in Supabase dashboard, assigned via `teacher_assignments` on the section page
+- [x] Self-serve password change _(`/account` page + `change-password-form.tsx` using `supabase.auth.updateUser`, linked from sidebar footer; commit 60b63c4)_
 - [x] End-to-end test: create sheet → enter grades → lock → post-lock edit with approval → audit log → report card preview _(manually walked through; no automated E2E suite)_
-- [ ] Deploy to Vercel _(blocked on design system pass completion + RLS tightening)_
+- [x] Deploy to Vercel _(live; monorepo flattened from `hfse-markbook/app/` to repo root, Root Directory blank, env vars + Supabase redirect URLs configured)_
+- [x] Tighten RLS _(migrations `004_tighten_rls.sql` + `005_rls_teacher_scoping.sql`: JWT role gate, deny-writes on authenticated role, `grade_audit_log` registrar-only, per-teacher row scoping on grade/student tables via `teacher_assignments` joins)_
 
-#### Design system pass — in progress
+#### Design system pass — fully revamped 2026-04-14
 
-Per `docs/context/09-design-system.md`. Sweeping in bites so direction can be verified before propagating.
+Original plan (industrial dark DM Sans, `.btn-*` CSS primitives) was **discarded** in favour of a new "Digital Ledger" corporate editorial system built entirely on shadcn primitives. All 14 private pages + login + account were rebuilt.
 
-- [x] **Bite 1** — token palette in `@theme`, DM Sans + DM Mono via `next/font/google`, dark body, sidebar (sectioned nav with active indicator), dashboard layout, login page _(app/globals.css, app/layout.tsx, components/ui/sidebar.tsx, app/(dashboard)/layout.tsx, app/(auth)/login/page.tsx, lib/auth/roles.ts)_
-- [ ] **Bite 2** — shared component primitives (`.btn-*`, `.badge-*`, `.card`, `.field`, `.table`, `.score-input`, `.stat-card`) in globals.css
-- [ ] **Bite 3** — sweep data pages (grading list + detail grid, sections list + detail + roster, audit log, sync students preview, admin landing)
-- [ ] **Bite 4** — sweep forms + remaining pages (new grading sheet, comments grid, attendance grid, teacher assignments panel, report card list + preview — preserve print styles)
-- [ ] **Bite 5** — special rules polish: grade color coding on quarterly column (<75 danger, 75–84 warning, 85+ neutral), locked-sheet plain-text mode, Tab key navigation between score cells, `.score-input.exceeds-max` red border + danger bg, withdrawn-row line-through
+- [x] New typography: Inter (`--font-sans`) + Source Serif 4 (`--font-serif`) + JetBrains Mono (`--font-mono`) via `next/font/google` in `app/layout.tsx`
+- [x] Tokens: shadcn semantic palette in `app/globals.css` via `@theme inline`, consumed everywhere through `bg-background` / `bg-card` / `bg-muted` / `bg-primary` / `text-foreground` / `text-muted-foreground` etc. **Zero hex/oklch/`slate-*`/`zinc-*`/`gray-*` in `app/` or `components/`.**
+- [x] Shared wrappers: `components/ui/page-shell.tsx`, `page-header.tsx`, `surface.tsx` (+ `SurfaceHeader`/`Title`/`Description`). Every dashboard page uses them.
+- [x] Dashboard layout: `bg-muted` canvas with glass sticky header, `print:hidden` / `print:bg-background` so the report-card paper prints clean
+- [x] Sidebar: serif brand lockup, role pill, `/account` link in footer next to Sign out
+- [x] Added missing shadcn primitives: `components/ui/select.tsx` (`@radix-ui/react-select`), `checkbox.tsx` (`@radix-ui/react-checkbox`), `textarea.tsx`
+- [x] Replaced all raw `<select>` (new-sheet-form, letter-grade-grid, teacher-assignments-panel), `<textarea>` (comments-grid), `<input type="checkbox">` (manual-add), stray `<button>` (login, score-entry-grid) with shadcn equivalents
+- [x] Replaced raw `<table>` in attendance-grid, comments-grid, score-entry-grid with shadcn `Table` (report-card print tables kept as documented exception for print pagination)
+- [x] `components/ui/sheet.tsx` scrim: `bg-black/80` → `bg-foreground/60` (theme-aware)
+- [x] Design doc `docs/context/09-design-system.md` rewritten with §10 "Always use shadcn components (binding rule)" and §11 "Color emphasis — use `--primary` meaningfully"
+- [x] Hard Rule #7 added to `CLAUDE.md`: "Design system is binding; `app/globals.css` is the only source for tokens"
+
+**Deferred from the original Bite 5 wishlist** (not blocking UAT):
+
+- [ ] Grade color coding on quarterly column (<75 danger, 75–84 warning, 85+ neutral)
+- [ ] Locked-sheet plain-text mode
+- [ ] Tab key navigation between score cells
+- [ ] `.score-input.exceeds-max` red border + danger bg
+- [ ] Withdrawn-row line-through (partially done — muted-foreground applied, no strike-through)
 
 ### Definition of Done
 
 - [x] Report card preview matches the spec layout _(browser-rendered; PDF service deferred)_
 - [ ] Batch PDF generation works for a full section _(deferred)_
-- [ ] System is deployed and accessible to Joann for UAT _(next up)_
+- [x] System is deployed and accessible to Joann for UAT _(live on Vercel; UAT message sent 2026-04-14)_
 - [x] At least one full term's worth of data has been entered and a report card successfully previewed
 
 ---

@@ -79,6 +79,7 @@ hfse-markbook/
 ├── app/                      ← App Router
 │   ├── (auth)/login/
 │   ├── (dashboard)/
+│   │   ├── account/          ← /account: self-serve password change (all roles)
 │   │   ├── grading/          ← teacher path: list, [id] grid, advisory comments
 │   │   ├── admin/            ← registrar path: sync, sections, audit-log
 │   │   └── report-cards/     ← HTML preview + browser print
