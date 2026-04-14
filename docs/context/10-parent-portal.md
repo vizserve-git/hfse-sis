@@ -139,12 +139,35 @@ Parent accounts live in the shared Supabase project's `auth.users`. The parent p
 
 ### Environment variables
 
-| Side | Name | Value |
-|---|---|---|
-| Markbook | `NEXT_PUBLIC_PARENT_PORTAL_URL` | `https://enrol.hfse.edu.sg/admission/dashboard` — error fallback destination on `/parent/enter` |
-| Parent portal | `NEXT_PUBLIC_MARKBOOK_HANDOFF_URL` | `https://<markbook-domain>/parent/enter` — target of the "View report card" button |
+Both sides of the handoff need **per-environment** env vars — the staging parent portal talks to the markbook's staging/preview deployment, and the production parent portal talks to the markbook's production. Vercel (and most platforms) support different env var values per environment on the same project, so you set each variable multiple times, once per environment, without touching the code.
 
-Both must be set in **Production** environment on Vercel (or equivalent), not just locally.
+#### Markbook — `NEXT_PUBLIC_PARENT_PORTAL_URL`
+
+Used by `/parent/enter` as the "Back to parent portal" button destination when the handoff fails. Read on every request, so changing it takes effect on the next page load — no redeploy needed.
+
+| Vercel environment | Value |
+|---|---|
+| **Production** | `https://enrol.hfse.edu.sg/admission/dashboard` |
+| **Preview** | `https://online-admission-staging.vercel.app/admission/dashboard` |
+| **Development** (local `.env.local`) | `https://online-admission-staging.vercel.app/admission/dashboard` (or whatever parent-portal instance you develop against) |
+
+Configure all three at **Vercel → your markbook project → Settings → Environment Variables**. Select the environment scope for each value individually; don't paste one value into "All Environments" or staging will point at production by accident.
+
+#### Parent portal — `NEXT_PUBLIC_MARKBOOK_HANDOFF_URL`
+
+Used by the `<ViewReportCardButton>` snippet as the handoff URL. The parent-portal team sets this in **their** Vercel project, not the markbook's.
+
+| Vercel environment | Value |
+|---|---|
+| **Production** | `https://<markbook-production-domain>/parent/enter` |
+| **Preview** | `https://<markbook-staging-or-preview-domain>/parent/enter` |
+| **Development** | `https://<markbook-staging-or-preview-domain>/parent/enter` |
+
+If there is only one markbook deployment today, both Production and Preview point at the same URL — that's fine, the markbook accepts handoffs from any origin (no origin checks were added this sprint). When a dedicated staging markbook exists later, bump the Preview value to point at it.
+
+#### Why per-environment matters
+
+Shipping the button to production parent portal with a staging markbook URL (or vice versa) leaks staging data into a production UX or breaks the handoff entirely. Treat both URLs as environment-scoped from day one — you avoid the "works on staging, breaks on production, I swear I tested it" class of bug.
 
 ### Integration snippet for the parent-portal team
 
@@ -156,9 +179,15 @@ Drop this component into the parent-portal repo (e.g. at `components/ViewReportC
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
-// Markbook handoff URL. Set NEXT_PUBLIC_MARKBOOK_HANDOFF_URL on the parent
-// portal's production env so it points at the real markbook domain instead
-// of a hardcoded default.
+// Markbook handoff URL. MUST be configured per-environment in Vercel
+// (Production, Preview, Development) so staging parent portal points at
+// the staging markbook and production points at production. Do NOT ship
+// without setting NEXT_PUBLIC_MARKBOOK_HANDOFF_URL in your parent-portal
+// Vercel project's environment variables.
+//
+// The fallback literal below is defensive only — it's the value the
+// snippet reaches for if the env var is somehow missing at runtime, and
+// it should match your default/staging markbook URL, not production.
 const MARKBOOK_HANDOFF_URL =
   process.env.NEXT_PUBLIC_MARKBOOK_HANDOFF_URL ??
   'https://hfse-markbook.vercel.app/parent/enter';
