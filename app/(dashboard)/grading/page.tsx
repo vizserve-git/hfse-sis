@@ -55,6 +55,58 @@ export default async function GradingListPage() {
        section:sections(id, name, level:levels(id, code, label, level_type))`,
     );
 
+  // Fetch all grade_entries for blanks_remaining calculation.
+  // Blank = null in any slot of ww/pt/qa (or letter_grade for non-examinable).
+  // Excludes withdrawn and is_na (late enrollee) students from the count.
+  const { data: entriesForBlanks } = await supabase
+    .from('grade_entries')
+    .select(
+      `grading_sheet_id, ww_scores, pt_scores, qa_score, letter_grade, is_na,
+       section_student:section_students(enrollment_status),
+       grading_sheet:grading_sheets(subject:subjects(is_examinable))`,
+    );
+
+  type EntryForBlanks = {
+    grading_sheet_id: string;
+    ww_scores: (number | null)[] | null;
+    pt_scores: (number | null)[] | null;
+    qa_score: number | null;
+    letter_grade: string | null;
+    is_na: boolean;
+    section_student:
+      | { enrollment_status: string }
+      | { enrollment_status: string }[]
+      | null;
+    grading_sheet:
+      | { subject: { is_examinable: boolean } | { is_examinable: boolean }[] | null }
+      | { subject: { is_examinable: boolean } | { is_examinable: boolean }[] | null }[]
+      | null;
+  };
+  const blanksBySheet = new Map<string, { blanks: number; total: number }>();
+  for (const e of (entriesForBlanks ?? []) as EntryForBlanks[]) {
+    const ss = first(e.section_student);
+    if (!ss || ss.enrollment_status === 'withdrawn') continue;
+    if (e.is_na) continue;
+    const gs = first(e.grading_sheet);
+    const subject = first(gs?.subject ?? null);
+    const examinable = subject?.is_examinable !== false;
+    const bucket =
+      blanksBySheet.get(e.grading_sheet_id) ?? { blanks: 0, total: 0 };
+    bucket.total += 1;
+    let blank = false;
+    if (examinable) {
+      const ww = (e.ww_scores ?? []) as (number | null)[];
+      const pt = (e.pt_scores ?? []) as (number | null)[];
+      if (ww.length === 0 || ww.some((s) => s == null)) blank = true;
+      if (pt.length === 0 || pt.some((s) => s == null)) blank = true;
+      if (e.qa_score == null) blank = true;
+    } else {
+      if (e.letter_grade == null) blank = true;
+    }
+    if (blank) bucket.blanks += 1;
+    blanksBySheet.set(e.grading_sheet_id, bucket);
+  }
+
   let advisorySections: Array<{ id: string; name: string; level_label: string | null }> = [];
   if (user.user) {
     const { data: advisorAssignments } = await supabase
@@ -93,6 +145,7 @@ export default async function GradingListPage() {
     const level = first(section?.level ?? null);
     const subject = first(s.subject);
     const term = first(s.term);
+    const bucket = blanksBySheet.get(s.id) ?? { blanks: 0, total: 0 };
     return {
       id: s.id,
       section: section?.name ?? '—',
@@ -101,6 +154,8 @@ export default async function GradingListPage() {
       term: term?.label ?? '—',
       teacher: s.teacher_name ?? null,
       is_locked: s.is_locked,
+      blanks_remaining: bucket.blanks,
+      total_students: bucket.total,
     };
   });
 

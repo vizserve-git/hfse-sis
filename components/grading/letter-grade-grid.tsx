@@ -93,36 +93,51 @@ export function LetterGradeGrid({
           </TableHeader>
           <TableBody>
             {rows.map((r) => {
+              const plaintext = readOnly && !requireApproval;
               const disabled = r.withdrawn || readOnly;
               return (
                 <TableRow key={r.entry_id} className={disabled ? 'text-muted-foreground' : ''}>
                   <TableCell className="text-right tabular-nums">{r.index_number}</TableCell>
                   <TableCell>
-                    <div className="whitespace-nowrap">{r.student_name}</div>
+                    <div
+                      className={
+                        r.withdrawn
+                          ? 'whitespace-nowrap line-through'
+                          : 'whitespace-nowrap'
+                      }
+                    >
+                      {r.student_name}
+                    </div>
                     <div className="text-xs tabular-nums text-muted-foreground">
                       {r.student_number}
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Select
-                      disabled={disabled}
-                      value={r.letter_grade ?? EMPTY_LETTER}
-                      onValueChange={(v) =>
-                        save(r.entry_id, v === EMPTY_LETTER ? null : v)
-                      }
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder="—" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={EMPTY_LETTER}>—</SelectItem>
-                        {LETTER_OPTIONS.map((o) => (
-                          <SelectItem key={o} value={o}>
-                            {o}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {plaintext ? (
+                      <span className="inline-block text-sm tabular-nums text-ink">
+                        {r.letter_grade ?? '—'}
+                      </span>
+                    ) : (
+                      <Select
+                        disabled={disabled}
+                        value={r.letter_grade ?? EMPTY_LETTER}
+                        onValueChange={(v) =>
+                          save(r.entry_id, v === EMPTY_LETTER ? null : v)
+                        }
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={EMPTY_LETTER}>—</SelectItem>
+                          {LETTER_OPTIONS.map((o) => (
+                            <SelectItem key={o} value={o}>
+                              {o}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </TableCell>
                 </TableRow>
               );

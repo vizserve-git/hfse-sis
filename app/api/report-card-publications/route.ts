@@ -3,6 +3,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
+import { emailParentsPublication } from '@/lib/notifications/email-parents-publication';
 
 // GET /api/report-card-publications?section_id=...
 // Registrar+ only. Returns all publications for a section.
@@ -75,10 +76,28 @@ export async function POST(request: NextRequest) {
       },
       { onConflict: 'section_id,term_id' },
     )
-    .select('id, section_id, term_id, publish_from, publish_until')
+    .select('id, section_id, term_id, publish_from, publish_until, notified_at')
     .single();
   if (error || !data) {
     return NextResponse.json({ error: error?.message ?? 'upsert failed' }, { status: 500 });
+  }
+
+  // Parent email notification — best-effort, idempotent via notified_at.
+  // Only sends on first insert (or after a manual notified_at = NULL reset).
+  let notification: { sent: number; failed: number; recipients: number } | null = null;
+  if (data.notified_at == null) {
+    notification = await emailParentsPublication({
+      sectionId: data.section_id,
+      termId: data.term_id,
+      publishFrom: data.publish_from,
+      publishUntil: data.publish_until,
+    });
+    if (notification.sent > 0) {
+      await service
+        .from('report_card_publications')
+        .update({ notified_at: new Date().toISOString() })
+        .eq('id', data.id);
+    }
   }
 
   await logAction({
@@ -92,8 +111,9 @@ export async function POST(request: NextRequest) {
       term_id: data.term_id,
       publish_from: data.publish_from,
       publish_until: data.publish_until,
+      notification,
     },
   });
 
-  return NextResponse.json({ publication: data });
+  return NextResponse.json({ publication: data, notification });
 }

@@ -6,33 +6,32 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 
 **Stack:** Next.js 16 (App Router) + Supabase + Vercel. Python/FastAPI/WeasyPrint PDF service from the original plan has been deferred (see Sprint 6 decision note); browser print handles current volume.
 
-## Status snapshot (last updated 2026-04-15)
+## Status snapshot (last updated 2026-04-16)
 
 | Sprint | Title | Status |
 |---|---|---|
 | 1 | Foundation | ✅ Done |
 | 2 | Student Roster | ✅ Done |
-| 3 | Grade Entry | 🔶 Mostly done (comparison column deferred) |
-| 4 | Locking & Audit Trail | ✅ Done (comprehensive audit log now covers all mutations; `is_na` UI toggle + blank-counts dashboard still deferred as polish) |
+| 3 | Grade Entry | 🔶 Mostly done (comparison column deferred — needs a second term of data) |
+| 4 | Locking & Audit Trail | ✅ Done (comprehensive audit log covers all mutations; `is_na` UI toggle shipped in Sprint 6 close-out) |
 | 5 | Comments, Attendance & Report Card Data | 🔶 Done with deferrals (Sec 3–4 profile, attendance import) |
-| 6 | PDF Generation & Polish | 🔶 PDF service deferred; **Aurora Vault v2 pass complete — every staff + parent page migrated, `PageHeader`/`Surface` wrappers deleted, audit-log rebuilt as interactive `@tanstack/react-table`, report card document uses brand header/footer images, sidebar redesigned, semantic color discipline (§9) codified**; RLS tightened; Vercel live; registrar UAT in progress; mobile responsive pass and parent-email notifications still open |
+| 6 | PDF Generation & Polish | ✅ Done (2026-04-16) — Aurora Vault v2 + close-out pass: grading grid polish (exceeds-max ring, withdrawn strike, plain-text locked mode, `is_na` toggle, quarterly color coding), blank-counts column on `/grading`, Resend-powered parent email notifications on publication (idempotent via `notified_at`). PDF automation, mobile pass, and previous-term comparison intentionally deferred — see backlog |
 | — | Teacher Assignments _(added mid-flight)_ | ✅ Done — `teacher_assignments` table + CRUD UI + gates on grading list & comments |
-| 7 | Admissions Dashboard (Phase 2) | ⏸️ Not started |
+| 7 | Admissions Dashboard (Phase 2) | ⏸️ Not started — blocked on UAT signoff from Joann |
 
 ### Cross-cutting improvements backlog
 
 These came up during sprints but were intentionally deferred to keep scope tight:
 
-- Previous-term comparison column on the grade entry grid (Sprint 3)
-- Dedicated UI toggle for the `is_na` late-enrollee flag (Sprint 4)
-- Registrar "sheets with blanks remaining" summary dashboard (Sprint 4)
-- Automated PDF generation + Supabase Storage archival (Sprint 6)
-- Mobile / tablet responsive pass (Sprint 6)
-- End-of-year "mid-year T1–T3" vs "full year T1–T4" report card toggle (Sprint 5)
-- Secondary Sec 3–4 Economics variant template (Sprint 5)
-- Virtue-theme header label on comments / report card (Sprint 5)
-- Email notification to parents when the registrar publishes a report card window (Sprint 6). Parents currently navigate via the parent-portal button; no push notification yet.
+- Previous-term comparison column on the grade entry grid (Sprint 3) — needs a second full term of data before it's meaningful
+- Automated PDF generation + Supabase Storage archival (Sprint 6) — browser Print / Save as PDF covers current volume; Puppeteer-in-Next.js is the path of least resistance if automation is ever needed
+- Mobile / tablet responsive pass (Sprint 6) — punted until after UAT signoff; registrar + teachers are all on desktop today
+- End-of-year "mid-year T1–T3" vs "full year T1–T4" report card toggle (Sprint 5) — end-of-year concern, no students past T2 yet
+- Secondary Sec 3–4 Economics variant template (Sprint 5) — no Sec 3–4 students enrolled yet
+- Virtue-theme header label on comments / report card (Sprint 5) — ornamental, no schema + no stakeholder ask
 - Origin check (HMAC) on `/parent/enter` handoff as defense-in-depth. Deliberately skipped for UAT — the existing parent↔student gate is sufficient. Revisit if a real threat materializes.
+- Broader loading-states pass on async actions — folded into each future bite as needed
+- Sprint 6 Bite 5 wishlist: grade color coding (✅ shipped), exceeds-max red border (✅ shipped), withdrawn strike-through (✅ shipped), locked-sheet plain-text mode (✅ shipped). Tab-key cell navigation verified working via native DOM order — no change needed.
 
 **Reference docs:**
 
@@ -432,12 +431,36 @@ Closing pass that finished every legacy page, removed the deprecated wrappers, a
 - [x] Sign out hover state shifts to `bg-destructive/10 text-destructive` to signal it ends the session (per §9.2 destructive intent).
 - [x] `SIDEBAR_WIDTH_ICON` in `components/ui/sidebar.tsx` bumped from `3rem` → `4rem` so the collapsed icon-only rail fits the `size-9` brand chip + `px-3` header padding without clipping.
 
+#### Sprint 6 close-out pass — 2026-04-16
+
+Final bite closing every deferred polish item that could ship without new data, plus the one real feature gap (parent notifications on publication).
+
+- [x] **Grade entry grid polish** (`components/grading/score-entry-grid.tsx`, `components/grading/letter-grade-grid.tsx`, `app/(dashboard)/grading/[id]/page.tsx`):
+  - Quarterly column rendered as color-coded pill per §9.3 recipes — `<75` destructive, `75–84` neutral muted, `85+` mint
+  - `ScoreInput` takes a `max` prop and sets `aria-invalid` with destructive ring when the entered value exceeds the per-cell max (client-side mirror of the server 400)
+  - Withdrawn students get `line-through` on the student name (parity with `letter-grade-grid` and `comments-grid`)
+  - Locked-sheet plain-text mode — when `readOnly && !requireApproval`, score cells render as `<span>` instead of disabled `<input>` (same treatment in `letter-grade-grid` for non-examinable subjects)
+  - `is_na` late-enrollee toggle shipped as a per-row `Checkbox` in a new rightmost "N/A" column; toggling disables the score inputs and greys the row. API already supported `is_na` — this was the missing UI. Audit-log flow unchanged (goes through the same PATCH → `log-grade-change` plumbing)
+  - Tab-key navigation verified already working via native DOM order — no code change
+- [x] **Blank-counts column on `/grading`** (`app/(dashboard)/grading/page.tsx` + `grading-data-table.tsx`):
+  - Server component fetches `grade_entries` alongside the sheet list and buckets `{ blanks, total }` by `grading_sheet_id`. Blank = any null WW/PT/QA slot for examinable subjects, or null `letter_grade` for non-examinable. Withdrawn + `is_na` students excluded from both numerator and denominator (matches `lib/compute/quarterly.ts` rules)
+  - New `Blanks` column renders mint "Complete" badge when 0, destructive "N of M blank" pill otherwise. Sortable asc/desc
+  - New "With blanks" status tab with live count, synced to the column filter alongside Open/Locked
+- [x] **Parent email notification on publication** (`lib/notifications/email-parents-publication.ts`, `lib/supabase/admissions.ts::getParentEmailsForSection`, `app/api/report-card-publications/route.ts`, `supabase/migrations/008_publication_notified_at.sql`):
+  - New `resend` npm dep + `RESEND_API_KEY` / `RESEND_FROM_EMAIL` env vars
+  - `getParentEmailsForSection(sectionId, ayCode)` resolves active section members → `students.student_number` → admissions `ay{YY}_enrolment_applications.motherEmail/fatherEmail`, de-dupes + lowercases
+  - `emailParentsPublication` composes a branded HTML email (indigo CTA button, matches the Aurora Vault palette) linking to `NEXT_PUBLIC_PARENT_PORTAL_URL` — parents always re-enter via the SSO handoff, never directly at the markbook URL
+  - Hook lives in `POST /api/report-card-publications` after the upsert, gated on `notified_at == null` for idempotency. Migration `008` adds the `notified_at` column
+  - Best-effort: Resend failures log + count but do not fail the publication. Notification result logged into the `publication.create` audit context for traceability
+  - Fully skipped (and logged) if `RESEND_API_KEY` or `NEXT_PUBLIC_PARENT_PORTAL_URL` are unset — keeps local-dev happy without Resend
+
 ### Definition of Done
 
 - [x] Report card preview matches the spec layout _(browser-rendered; PDF service deferred)_
-- [ ] Batch PDF generation works for a full section _(deferred)_
+- [ ] Batch PDF generation works for a full section _(deferred — Puppeteer-in-Next.js is the path if automation is ever needed)_
 - [x] System is deployed and accessible to Joann for UAT _(live on Vercel; UAT message sent 2026-04-14)_
 - [x] At least one full term's worth of data has been entered and a report card successfully previewed
+- [x] Parents are notified when a report card is published _(Resend-powered email, idempotent via `notified_at`)_
 
 ---
 

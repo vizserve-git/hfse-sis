@@ -87,6 +87,74 @@ export async function fetchAdmissionsRoster(ayCode: string): Promise<AdmissionsR
   return out;
 }
 
+// Resolve a grading section → unique parent email addresses via the admissions
+// `ay{YY}_enrolment_applications.motherEmail/fatherEmail` columns.
+//
+// Flow:
+//   1) Look up active (non-withdrawn) section_students + students.student_number
+//      in the grading schema for the given section.
+//   2) Query the admissions apps table for matching studentNumbers and pull
+//      motherEmail + fatherEmail.
+//   3) De-duplicate, drop nulls, lowercase for comparison.
+//
+// Used by the publication-notification hook — parents whose children are
+// enrolled in the section receive one email when the registrar publishes.
+export async function getParentEmailsForSection(
+  sectionId: string,
+  ayCode: string,
+): Promise<string[]> {
+  const supabase = createAdmissionsClient();
+
+  // 1) active section members → student_number
+  const { data: members, error: memErr } = await supabase
+    .from('section_students')
+    .select('student:students(student_number)')
+    .eq('section_id', sectionId)
+    .neq('enrollment_status', 'withdrawn');
+  if (memErr) {
+    console.error('[admissions] section members lookup failed:', memErr.message);
+    return [];
+  }
+  type MemberRow = {
+    student:
+      | { student_number: string | null }
+      | { student_number: string | null }[]
+      | null;
+  };
+  const studentNumbers = ((members ?? []) as MemberRow[])
+    .map((m) => (Array.isArray(m.student) ? m.student[0] : m.student))
+    .map((s) => s?.student_number)
+    .filter((n): n is string => !!n);
+  if (studentNumbers.length === 0) return [];
+
+  // 2) admissions apps → mother/father email
+  const year = ayCode.replace(/^AY/i, '').toLowerCase();
+  const appsTable = `ay${year}_enrolment_applications`;
+  const { data: apps, error: appsErr } = await supabase
+    .from(appsTable)
+    .select('studentNumber, motherEmail, fatherEmail')
+    .in('studentNumber', studentNumbers);
+  if (appsErr) {
+    console.error('[admissions] apps email lookup failed:', appsErr.message);
+    return [];
+  }
+  type AppRow = {
+    studentNumber: string | null;
+    motherEmail: string | null;
+    fatherEmail: string | null;
+  };
+  const seen = new Set<string>();
+  for (const r of (apps ?? []) as AppRow[]) {
+    for (const raw of [r.motherEmail, r.fatherEmail]) {
+      if (!raw) continue;
+      const norm = raw.trim().toLowerCase();
+      if (!norm || !norm.includes('@')) continue;
+      seen.add(norm);
+    }
+  }
+  return Array.from(seen);
+}
+
 // Row shape returned when looking up a parent's children.
 export type ParentStudentRow = {
   student_number: string;

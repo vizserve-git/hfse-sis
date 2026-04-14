@@ -67,6 +67,8 @@ export type GradingSheetRow = {
   term: string;
   teacher: string | null;
   is_locked: boolean;
+  blanks_remaining: number;
+  total_students: number;
 };
 
 export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
@@ -77,7 +79,7 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
   const [globalFilter, setGlobalFilter] = React.useState('');
-  const [status, setStatus] = React.useState<'all' | 'open' | 'locked'>('all');
+  const [status, setStatus] = React.useState<'all' | 'open' | 'locked' | 'blanks'>('all');
 
   const columns: ColumnDef<GradingSheetRow>[] = React.useMemo(
     () => [
@@ -150,6 +152,44 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
         ),
       },
       {
+        accessorKey: 'blanks_remaining',
+        header: ({ column }) => (
+          <SortableHeader
+            label="Blanks"
+            sorted={column.getIsSorted()}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          />
+        ),
+        cell: ({ row }) => {
+          const { blanks_remaining, total_students } = row.original;
+          if (blanks_remaining === 0) {
+            return (
+              <Badge
+                variant="outline"
+                className="h-6 border-brand-mint bg-brand-mint/30 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink"
+              >
+                <CheckCircle2 className="h-3 w-3" />
+                Complete
+              </Badge>
+            );
+          }
+          return (
+            <Badge
+              variant="outline"
+              className="h-6 border-destructive/40 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive"
+            >
+              {blanks_remaining} of {total_students} blank
+            </Badge>
+          );
+        },
+        sortingFn: (a, b) =>
+          a.original.blanks_remaining - b.original.blanks_remaining,
+        filterFn: (row, _id, value) => {
+          if (value === 'blanks') return row.original.blanks_remaining > 0;
+          return true;
+        },
+      },
+      {
         accessorKey: 'is_locked',
         header: 'Status',
         cell: ({ row }) =>
@@ -219,12 +259,21 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
     getFacetedUniqueValues: getFacetedUniqueValues(),
   });
 
-  // Keep the is_locked column filter in sync with the status tab.
+  // Keep the is_locked + blanks_remaining column filters in sync with the status tab.
   React.useEffect(() => {
-    const col = table.getColumn('is_locked');
-    if (!col) return;
-    if (status === 'all') col.setFilterValue(undefined);
-    else col.setFilterValue(status);
+    const lockCol = table.getColumn('is_locked');
+    const blanksCol = table.getColumn('blanks_remaining');
+    if (!lockCol || !blanksCol) return;
+    if (status === 'blanks') {
+      lockCol.setFilterValue(undefined);
+      blanksCol.setFilterValue('blanks');
+    } else if (status === 'all') {
+      lockCol.setFilterValue(undefined);
+      blanksCol.setFilterValue(undefined);
+    } else {
+      lockCol.setFilterValue(status);
+      blanksCol.setFilterValue(undefined);
+    }
   }, [status, table]);
 
   // Facets for the Level dropdown filter.
@@ -339,7 +388,11 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
                     onSelect={(e) => e.preventDefault()}
                     className="capitalize"
                   >
-                    {col.id === 'is_locked' ? 'Status' : col.id}
+                    {col.id === 'is_locked'
+                      ? 'Status'
+                      : col.id === 'blanks_remaining'
+                        ? 'Blanks'
+                        : col.id}
                   </DropdownMenuCheckboxItem>
                 ))}
             </DropdownMenuContent>
@@ -377,6 +430,12 @@ export function GradingDataTable({ data }: { data: GradingSheetRow[] }) {
               Locked{' '}
               <span className="ml-1 font-mono text-[10px] text-muted-foreground">
                 {data.filter((r) => r.is_locked).length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger value="blanks">
+              With blanks{' '}
+              <span className="ml-1 font-mono text-[10px] text-muted-foreground">
+                {data.filter((r) => r.blanks_remaining > 0).length}
               </span>
             </TabsTrigger>
           </TabsList>

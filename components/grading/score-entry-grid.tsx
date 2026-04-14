@@ -4,8 +4,10 @@ import { useState, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
   TableBody,
@@ -21,6 +23,7 @@ export type GradeRow = {
   student_name: string;
   student_number: string;
   withdrawn: boolean;
+  is_na: boolean;
   ww_scores: (number | null)[];
   pt_scores: (number | null)[];
   qa_score: number | null;
@@ -66,8 +69,10 @@ export function ScoreEntryGrid({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [approvalRef, setApprovalRef] = useState<string>('');
 
+  const locked = readOnly && !requireApproval;
+
   const patchEntry = useCallback(
-    async (entryId: string, body: Partial<Pick<GradeRow, 'ww_scores' | 'pt_scores' | 'qa_score'>>) => {
+    async (entryId: string, body: Partial<Pick<GradeRow, 'ww_scores' | 'pt_scores' | 'qa_score' | 'is_na'>>) => {
       let approval = approvalRef;
       if (requireApproval && !approval) {
         const entered = window.prompt(
@@ -113,6 +118,7 @@ export function ScoreEntryGrid({
                   qa_ps: data.entry.qa_ps,
                   initial_grade: data.entry.initial_grade,
                   quarterly_grade: data.entry.quarterly_grade,
+                  is_na: data.entry.is_na ?? r.is_na,
                 }
               : r,
           ),
@@ -161,29 +167,41 @@ export function ScoreEntryGrid({
               </TableHead>
               <TableHead className="text-right">Initial</TableHead>
               <TableHead className="text-right">Quarterly</TableHead>
+              <TableHead className="text-center">N/A</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((r) => {
-              const disabled = r.withdrawn || readOnly;
-              const rowClass = disabled ? 'text-muted-foreground' : '';
+              const inputsDisabled = r.withdrawn || r.is_na || readOnly;
+              const muted = r.withdrawn || r.is_na || readOnly;
+              const rowClass = muted ? 'text-muted-foreground' : '';
               return (
                 <TableRow key={r.entry_id} className={rowClass}>
                   <TableCell className="sticky left-0 z-10 bg-card text-right tabular-nums">
                     {r.index_number}
                   </TableCell>
                   <TableCell className="sticky left-8 z-10 bg-card">
-                    <div className="whitespace-nowrap">{r.student_name}</div>
+                    <div
+                      className={
+                        r.withdrawn
+                          ? 'whitespace-nowrap line-through'
+                          : 'whitespace-nowrap'
+                      }
+                    >
+                      {r.student_name}
+                    </div>
                     <div className="text-xs tabular-nums text-muted-foreground">
                       {r.student_number}
                     </div>
                   </TableCell>
 
-                  {wwTotals.map((_, i) => (
+                  {wwTotals.map((max, i) => (
                     <TableCell key={`ww-${i}`} className="px-1 py-1">
                       <ScoreInput
                         value={r.ww_scores[i] ?? null}
-                        disabled={disabled}
+                        max={max}
+                        plaintext={locked}
+                        disabled={inputsDisabled}
                         onLocalChange={(v) =>
                           updateLocal(r.entry_id, (row) => ({
                             ...row,
@@ -198,11 +216,13 @@ export function ScoreEntryGrid({
                     </TableCell>
                   ))}
 
-                  {ptTotals.map((_, i) => (
+                  {ptTotals.map((max, i) => (
                     <TableCell key={`pt-${i}`} className="px-1 py-1">
                       <ScoreInput
                         value={r.pt_scores[i] ?? null}
-                        disabled={disabled}
+                        max={max}
+                        plaintext={locked}
+                        disabled={inputsDisabled}
                         onLocalChange={(v) =>
                           updateLocal(r.entry_id, (row) => ({
                             ...row,
@@ -220,7 +240,9 @@ export function ScoreEntryGrid({
                   <TableCell className="px-1 py-1">
                     <ScoreInput
                       value={r.qa_score}
-                      disabled={disabled}
+                      max={qaTotal}
+                      plaintext={locked}
+                      disabled={inputsDisabled}
                       onLocalChange={(v) =>
                         updateLocal(r.entry_id, (row) => ({ ...row, qa_score: v }))
                       }
@@ -231,8 +253,20 @@ export function ScoreEntryGrid({
                   <TableCell className="text-right tabular-nums text-muted-foreground">
                     {r.initial_grade != null ? r.initial_grade.toFixed(2) : '—'}
                   </TableCell>
-                  <TableCell className="text-right text-base font-semibold tabular-nums">
-                    {r.quarterly_grade ?? '—'}
+                  <TableCell className="text-right tabular-nums">
+                    <QuarterlyPill value={r.quarterly_grade} muted={muted} />
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Checkbox
+                      checked={r.is_na}
+                      disabled={r.withdrawn || readOnly}
+                      aria-label="Mark late enrollee N/A"
+                      onCheckedChange={(v) => {
+                        const next = v === true;
+                        updateLocal(r.entry_id, (row) => ({ ...row, is_na: next }));
+                        patchEntry(r.entry_id, { is_na: next });
+                      }}
+                    />
                   </TableCell>
                 </TableRow>
               );
@@ -282,6 +316,33 @@ export function ScoreEntryGrid({
   );
 }
 
+function QuarterlyPill({ value, muted }: { value: number | null; muted: boolean }) {
+  if (value == null) {
+    return <span className="text-base font-semibold text-muted-foreground">—</span>;
+  }
+  if (muted) {
+    return (
+      <span className="text-base font-semibold tabular-nums text-muted-foreground">
+        {value}
+      </span>
+    );
+  }
+  const tone =
+    value < 75
+      ? 'border-destructive/40 bg-destructive/10 text-destructive'
+      : value < 85
+        ? 'border-hairline bg-muted text-ink'
+        : 'border-brand-mint bg-brand-mint/30 text-ink';
+  return (
+    <Badge
+      variant="outline"
+      className={`h-7 justify-end px-2 text-sm font-semibold tabular-nums ${tone}`}
+    >
+      {value}
+    </Badge>
+  );
+}
+
 function replaceAt(
   arr: (number | null)[],
   i: number,
@@ -296,22 +357,38 @@ function replaceAt(
 
 function ScoreInput({
   value,
+  max,
   disabled,
+  plaintext,
   onLocalChange,
   onCommit,
 }: {
   value: number | null;
+  max?: number | null;
   disabled?: boolean;
+  plaintext?: boolean;
   onLocalChange: (v: number | null) => void;
   onCommit: (v: number | null) => void;
 }) {
   const [text, setText] = useState<string>(displayCell(value));
+
+  if (plaintext) {
+    return (
+      <span className="inline-block h-8 w-14 px-1.5 py-1 text-right text-sm tabular-nums text-ink">
+        {displayCell(value) || '—'}
+      </span>
+    );
+  }
+
+  const parsed = parseCell(text);
+  const isExceeded = parsed != null && max != null && parsed > max;
 
   return (
     <input
       type="number"
       inputMode="decimal"
       disabled={disabled}
+      aria-invalid={isExceeded || undefined}
       value={text}
       onChange={(e) => {
         setText(e.target.value);
@@ -325,7 +402,7 @@ function ScoreInput({
           (e.target as HTMLInputElement).blur();
         }
       }}
-      className="h-8 w-14 rounded-md border border-input bg-background px-1.5 text-right text-sm tabular-nums ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60"
+      className="h-8 w-14 rounded-md border border-input bg-background px-1.5 text-right text-sm tabular-nums ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 aria-[invalid=true]:border-destructive aria-[invalid=true]:bg-destructive/5 aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-destructive/20"
     />
   );
 }

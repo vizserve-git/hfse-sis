@@ -93,6 +93,7 @@ hfse-markbook/
 │   ├── auth/                 ← roles, require-role, teacher-assignments
 │   ├── compute/              ← quarterly.ts + annual.ts (both with self-tests)
 │   ├── audit/                ← log-action.ts (generic) + log-grade-change.ts (legacy)
+│   ├── notifications/        ← email-parents-publication.ts (Resend)
 │   ├── report-card/          ← build-report-card.ts (shared staff+parent fetch)
 │   ├── academic-year.ts      ← getCurrentAcademicYear / requireCurrentAyCode
 │   └── sync/                 ← students planner, snapshot loader, normalizers
@@ -102,7 +103,7 @@ hfse-markbook/
 ├── components/ui/            ← shadcn primitives (button/card/table/field/select/tabs/dropdown-menu/sheet/popover/calendar/...) + DateTimePicker wrapper + PageShell layout wrapper
 ├── components/{app,parent}-sidebar.tsx
 ├── supabase/
-│   ├── migrations/           ← 001_initial_schema → 007_report_card_publications
+│   ├── migrations/           ← 001_initial_schema → 008_publication_notified_at
 │   └── seed.sql              ← AY2026 + levels + subjects + sections + terms + configs
 ├── docs/                     ← context docs (incl. 10-parent-portal.md) + sprint plan
 └── types/index.ts
@@ -117,6 +118,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_KEY=              # server-only, bypasses RLS
 PDF_SERVICE_URL=                   # reserved, currently unused
 NEXT_PUBLIC_PARENT_PORTAL_URL=     # parent-portal dashboard, per-environment (see docs/context/10-parent-portal.md)
+RESEND_API_KEY=                    # server-only, parent report-card notifications via Resend
+RESEND_FROM_EMAIL=                 # optional, defaults to "HFSE Markbook <noreply@hfse.edu.sg>"
 ```
 
 Original plan had separate `ADMISSIONS_SUPABASE_*` vars; dropped because admissions and grading share one Supabase project. `lib/supabase/admissions.ts` reuses `createServiceClient()`.
@@ -139,6 +142,7 @@ Original plan had separate `ADMISSIONS_SUPABASE_*` vars; dropped because admissi
 14. **Dynamic academic year** via `lib/academic-year.ts::getCurrentAcademicYear()` — reads `academic_years WHERE is_current=true`. Never hardcode `'AY2026'` in runtime code; admissions table prefixes (`ay{YY}_enrolment_*`) are derived from the current AY code so rolling to AY2027 is a DB flag flip, not a code change.
 15. **Aurora Vault palette** — core shadcn semantic tokens in `app/globals.css` `:root` are remapped to the Aurora Vault hex palette (navy `#0B1120`, indigo `#4F46E5`, ink ramp `#0F172A`→`#94A3B8`, hairline `#E2E8F0`). Raw values use the `--av-*` prefix to avoid self-reference cycles with `@theme inline`. All shadcn semantic utilities (`bg-primary`, `text-foreground`, `border-border`, `bg-card`) and explicit Aurora Vault utilities (`bg-brand-indigo`, `text-ink`, `border-hairline`) render identically — use either. Full token table and page→component matrix in `docs/context/09-design-system.md`.
 16. **`@tanstack/react-table` is the canonical data-table engine** for filterable/sortable/paginated lists. Reference implementation: `app/(dashboard)/grading/grading-data-table.tsx` (dashboard-01 toolbar pattern with global search, faceted level filter, column visibility, status tabs, pagination). New data tables start from there, not from a bare `<Table>` wrapper.
+17. **Parent notifications via Resend** — `lib/notifications/email-parents-publication.ts` is called from `POST /api/report-card-publications` and is idempotent via the `report_card_publications.notified_at` column (`008_publication_notified_at.sql`). Best-effort: failures log but never fail the publication. Silently no-ops when `RESEND_API_KEY` / `NEXT_PUBLIC_PARENT_PORTAL_URL` are unset, so local dev works without the dep.
 
 ## Workflow
 
