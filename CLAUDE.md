@@ -48,33 +48,33 @@ Any PATCH to a locked sheet must include a non-empty `approval_reference` in the
 
 Removing a score sets it to `null` with an audit entry. Withdrawn students stay in `section_students` with `enrollment_status='withdrawn'`. Audit log is never updated or deleted; unlocking does not purge it.
 
-### 7. Design system is binding; `app/app/globals.css` is the only source for tokens
+### 7. Design system is binding; `app/globals.css` is the only source for tokens
 
-All UI must conform to `docs/context/09-design-system.md`. Colors, fonts, radius, and shadows are defined exactly once in `app/app/globals.css` and consumed through shadcn semantic Tailwind classes (`bg-background`, `text-foreground`, `bg-card`, `bg-primary`, `text-muted-foreground`, `border-border`, `ring-ring`, `bg-chart-1…5`, `bg-sidebar*`, etc.). **Never** hardcode `#rrggbb`, `oklch(...)`, or use `slate-*` / `zinc-*` / `gray-*` Tailwind utilities in `app/` or `components/`. **Never** redefine tokens in component code or in a `tailwind.config.*` file — Tailwind v4 has no JS config in this project. To change a color, edit `globals.css`.
+All UI must conform to `docs/context/09-design-system.md`. Colors, fonts, radius, and shadows are defined exactly once in `app/globals.css` and consumed through shadcn semantic Tailwind classes (`bg-background`, `text-foreground`, `bg-card`, `bg-primary`, `text-muted-foreground`, `border-border`, `ring-ring`, `bg-chart-1…5`, `bg-sidebar*`, etc.). **Never** hardcode `#rrggbb`, `oklch(...)`, or use `slate-*` / `zinc-*` / `gray-*` Tailwind utilities in `app/` or `components/`. **Never** redefine tokens in component code or in a `tailwind.config.*` file — Tailwind v4 has no JS config in this project. To change a color, edit `globals.css`.
 
 ## Tech stack
 
-- **Next.js 16** (App Router, Turbopack, TypeScript) — single deployable at `/app`
+- **Next.js 16** (App Router, Turbopack, TypeScript) — single deployable at the repo root
 - **Supabase** (Postgres + Auth, `@supabase/ssr`) — single shared project also hosting admissions tables
 - **Tailwind CSS v4** via `@tailwindcss/postcss` (no `tailwind.config.js`)
-- **Vercel** — deployment target
+- **Vercel** — deployment target (Root Directory: repo root / blank)
 - **PDF generation deferred** — browser Print / Save as PDF covers current volume. If automation is needed later, prefer Puppeteer-in-Next.js over the original Python/WeasyPrint plan.
 
 ### Next.js 16 gotchas
 
-These differ from Next 15 and from typical training data. Authoritative reference: `app/node_modules/next/dist/docs/`.
+These differ from Next 15 and from typical training data. Authoritative reference: `node_modules/next/dist/docs/`.
 
-- **`middleware.ts` is renamed to `proxy.ts`**. The exported function must be named `proxy`. See `app/proxy.ts`.
+- **`middleware.ts` is renamed to `proxy.ts`**. The exported function must be named `proxy`. See `proxy.ts` at the repo root.
 - `cookies()`, `headers()`, `params`, `searchParams` are async — always `await`.
 - Use `@supabase/ssr`, never the deprecated `@supabase/auth-helpers-nextjs`.
 - Use `next/navigation` for redirects in server components, never `next/router`.
 
 ## Project layout
 
-Single deployable: `/app` (Next.js → Vercel). No `/pdf-service` (deferred).
+Single deployable at the repo root. The Next.js project lives directly in the repo root — there is no `app/` wrapper subdirectory. The `app/` directory below is the Next.js **App Router**, not a subproject.
 
 ```
-app/
+hfse-markbook/
 ├── proxy.ts                  ← auth + role gate (renamed from middleware.ts)
 ├── app/                      ← App Router
 │   ├── (auth)/login/
@@ -91,17 +91,18 @@ app/
 │   └── sync/                 ← students planner, snapshot loader, normalizers
 ├── components/grading/       ← score-entry-grid, lock-toggle, totals-editor, ...
 ├── components/admin/         ← teacher-assignments-panel
-├── components/ui/            ← sidebar
+├── components/ui/            ← shadcn primitives + PageShell / PageHeader / Surface
 ├── supabase/
-│   ├── migrations/           ← 001_initial_schema, 002_widen_grade_entry_numerics, 003_teacher_assignments
+│   ├── migrations/           ← 001_initial_schema → 005_rls_teacher_scoping
 │   └── seed.sql              ← AY2026 + levels + subjects + sections + terms + configs
+├── docs/                     ← context docs + sprint plan
 └── types/index.ts
 ```
 
 ## Environment variables
 
 ```bash
-# app/.env.local
+# .env.local (at repo root)
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_KEY=        # server-only, bypasses RLS
@@ -120,7 +121,7 @@ Original plan had separate `ADMISSIONS_SUPABASE_*` vars; dropped because admissi
 6. **Max 50 students per section.**
 7. **Overall annual grade** = `T1×0.20 + T2×0.20 + T3×0.20 + T4×0.40`, rounded 2dp. See `lib/compute/annual.ts`.
 8. **PDF generation deferred** — browser print covers current volume.
-9. **RLS is permissive** (`USING (true)` for authenticated reads) on all tables. Tighten before production UAT — backlog item.
+9. **RLS tightened** via `supabase/migrations/004_tighten_rls.sql` (JWT role gate + deny-writes on authenticated role + grade_audit_log registrar-only) and `005_rls_teacher_scoping.sql` (per-teacher row scoping on grade/student tables). Apply both before production UAT.
 
 ## Workflow
 

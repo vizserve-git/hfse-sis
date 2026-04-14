@@ -290,7 +290,7 @@ def compute_quarterly_grade(
 
 Per `docs/context/09-design-system.md`. Sweeping in bites so direction can be verified before propagating.
 
-- [x] **Bite 1** — token palette in `@theme`, DM Sans + DM Mono via `next/font/google`, dark body, sidebar (sectioned nav with active indicator), dashboard layout, login page _(app/app/globals.css, app/app/layout.tsx, app/components/ui/sidebar.tsx, app/app/(dashboard)/layout.tsx, app/app/(auth)/login/page.tsx, app/lib/auth/roles.ts)_
+- [x] **Bite 1** — token palette in `@theme`, DM Sans + DM Mono via `next/font/google`, dark body, sidebar (sectioned nav with active indicator), dashboard layout, login page _(app/globals.css, app/layout.tsx, components/ui/sidebar.tsx, app/(dashboard)/layout.tsx, app/(auth)/login/page.tsx, lib/auth/roles.ts)_
 - [ ] **Bite 2** — shared component primitives (`.btn-*`, `.badge-*`, `.card`, `.field`, `.table`, `.score-input`, `.stat-card`) in globals.css
 - [ ] **Bite 3** — sweep data pages (grading list + detail grid, sections list + detail + roster, audit log, sync students preview, admin landing)
 - [ ] **Bite 4** — sweep forms + remaining pages (new grading sheet, comments grid, attendance grid, teacher assignments panel, report card list + preview — preserve print styles)

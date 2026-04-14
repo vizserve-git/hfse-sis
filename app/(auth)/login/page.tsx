@@ -1,27 +1,19 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import {
-  AlertCircle,
-  FileCheck2,
-  GraduationCap,
-  Loader2,
-  Lock,
-  Shield,
-  Users,
-} from 'lucide-react';
+import { AlertCircle, FileCheck2, GraduationCap, Loader2, Lock, Shield, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
-import { createClient } from '@/lib/supabase/client';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,25 +29,21 @@ export default function LoginPage() {
       setError(error.message);
       return;
     }
-    router.replace('/');
+    router.replace("/");
     router.refresh();
   }
 
   return (
     <main className="grid min-h-dvh w-full bg-background lg:grid-cols-[1.1fr_1fr]">
       {/* Left brand panel */}
-      <aside
-        className="relative hidden overflow-hidden border-r border-border bg-muted lg:flex lg:flex-col lg:justify-between lg:p-14"
-      >
+      <aside className="relative hidden overflow-hidden border-r border-border bg-muted lg:flex lg:flex-col lg:justify-between lg:p-14">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 opacity-40"
           style={{
-            backgroundImage:
-              'radial-gradient(circle at 1px 1px, var(--muted-foreground) 1px, transparent 0)',
-            backgroundSize: '22px 22px',
-            maskImage:
-              'radial-gradient(ellipse at center, black 40%, transparent 75%)',
+            backgroundImage: "radial-gradient(circle at 1px 1px, var(--muted-foreground) 1px, transparent 0)",
+            backgroundSize: "22px 22px",
+            maskImage: "radial-gradient(ellipse at center, black 40%, transparent 75%)",
           }}
         />
 
@@ -64,12 +52,8 @@ export default function LoginPage() {
             <GraduationCap className="h-5 w-5" />
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold tracking-tight text-foreground">
-              HFSE International School
-            </span>
-            <span className="text-xs text-muted-foreground">
-              Singapore &middot; AY 2025–2026
-            </span>
+            <span className="text-sm font-semibold tracking-tight text-foreground">HFSE International School</span>
+            <span className="text-xs text-muted-foreground">Singapore &middot; AY 2025–2026</span>
           </div>
         </div>
 
@@ -78,12 +62,11 @@ export default function LoginPage() {
             Faculty Portal
           </span>
           <h1 className="mt-5 font-serif text-4xl font-semibold leading-[1.1] tracking-tight text-foreground xl:text-[2.75rem]">
-            Grading, report cards, and advisory —
-            <span className="text-muted-foreground"> one source of truth.</span>
+            Grading, report cards, and advisory —<span className="text-muted-foreground"> one source of truth.</span>
           </h1>
           <p className="mt-4 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-            The official HFSE markbook replaces quarterly spreadsheets with a
-            single, auditable system for teachers and the registrar.
+            The official HFSE markbook replaces quarterly spreadsheets with a single, auditable system for teachers and
+            the registrar.
           </p>
 
           <ul className="mt-10 space-y-5">
@@ -129,9 +112,7 @@ export default function LoginPage() {
             <h2 className="font-serif text-[28px] font-semibold tracking-tight text-foreground">
               Sign in to your account
             </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Use your HFSE staff credentials to continue.
-            </p>
+            <p className="mt-2 text-sm text-muted-foreground">Use your HFSE staff credentials to continue.</p>
           </div>
 
           <form onSubmit={onSubmit} noValidate className="space-y-5">
@@ -160,14 +141,13 @@ export default function LoginPage() {
                   size="sm"
                   className="h-auto p-0 text-xs font-medium text-muted-foreground hover:text-foreground hover:no-underline"
                   onClick={() => setShowPassword((s) => !s)}
-                  aria-pressed={showPassword}
-                >
-                  {showPassword ? 'Hide' : 'Show'}
+                  aria-pressed={showPassword}>
+                  {showPassword ? "Hide" : "Show"}
                 </Button>
               </div>
               <Input
                 id="password"
-                type={showPassword ? 'text' : 'password'}
+                type={showPassword ? "text" : "password"}
                 required
                 autoComplete="current-password"
                 value={password}
@@ -186,7 +166,7 @@ export default function LoginPage() {
 
             <Button type="submit" disabled={loading} className="h-11 w-full shadow-sm">
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {loading ? 'Signing in…' : 'Sign in'}
+              {loading ? "Signing in…" : "Sign in"}
             </Button>
 
             <p className="text-center text-xs text-muted-foreground">
@@ -215,14 +195,12 @@ function FeatureRow({
 }) {
   return (
     <li className="flex gap-4">
-      <span className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary shadow-sm">
+      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary shadow-sm">
         <Icon className="h-4 w-4" />
       </span>
       <div className="flex flex-col">
         <span className="text-sm font-semibold text-foreground">{title}</span>
-        <span className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
-          {body}
-        </span>
+        <span className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">{body}</span>
       </div>
     </li>
   );

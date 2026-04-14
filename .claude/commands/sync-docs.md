@@ -20,13 +20,13 @@ Optional argument (`$ARGUMENTS`) — a focus hint like `"sprint 4"`, `"env vars"
 
 Use Read / Glob / Grep / Bash (`git log --oneline -20`, `git status`, etc.) to inspect the current state. Specifically:
 
-- **Migrations:** `app/supabase/migrations/*.sql` — what's the highest-numbered one? Any new since the last doc update?
-- **API routes:** walk `app/app/api/` and list every `route.ts`. Compare to what `CLAUDE.md` and `development-plan.md` claim exists.
-- **Pages:** walk `app/app/(dashboard)/` and `app/app/(auth)/` for new routes.
-- **Lib modules:** new files in `app/lib/{compute,auth,sync,audit,supabase}/`.
-- **Components:** new files in `app/components/{grading,admin,ui}/`.
-- **Env vars:** `app/.env.local.example` — does the list match what `CLAUDE.md` documents?
-- **Tech versions:** `app/package.json` — Next.js, React, Tailwind, `@supabase/*` versions still match what `CLAUDE.md` says?
+- **Migrations:** `supabase/migrations/*.sql` — what's the highest-numbered one? Any new since the last doc update?
+- **API routes:** walk `app/api/` and list every `route.ts`. Compare to what `CLAUDE.md` and `development-plan.md` claim exists.
+- **Pages:** walk `app/(dashboard)/` and `app/(auth)/` for new routes.
+- **Lib modules:** new files in `lib/{compute,auth,sync,audit,supabase}/`.
+- **Components:** new files in `components/{grading,admin,ui}/`.
+- **Env vars:** `.env.local.example` — does the list match what `CLAUDE.md` documents?
+- **Tech versions:** `package.json` — Next.js, React, Tailwind, `@supabase/*` versions still match what `CLAUDE.md` says?
 - **Task list:** call `TaskList` and read recently completed / deferred tasks for hints about what shipped or got punted.
 
 ### 2. Diff against `CLAUDE.md`
@@ -35,15 +35,15 @@ For each section, check accuracy:
 
 - **Reference docs table:** has any `docs/context/*.md` file moved or been renamed? (Rare; usually skip.)
 - **Hard rules:** **NEVER edit these.** Only verify they're still enforced in code. Greps to run:
-  - `grep -r "quarterly_grade !== 93" app/lib/compute/` — formula self-test still present
-  - `grep -r "approval_reference" app/app/api/grading-sheets/` — post-lock gate still wired
-  - `grep -r "is_locked" app/app/api/grading-sheets/\[id\]/entries/` — lock check on entry PATCH
-  - `grep -rn "computeQuarterly" app/app/api/` — server-side compute (not client-side)
+  - `grep -r "quarterly_grade !== 93" lib/compute/` — formula self-test still present
+  - `grep -r "approval_reference" app/api/grading-sheets/` — post-lock gate still wired
+  - `grep -r "is_locked" app/api/grading-sheets/\[id\]/entries/` — lock check on entry PATCH
+  - `grep -rn "computeQuarterly" app/api/` — server-side compute (not client-side)
   - If any check comes up empty, **stop and report — a hard rule has regressed.** Do not silently update docs around it.
 - **Tech stack:** version pins still match `package.json`?
-- **Next.js gotchas:** any new breaking change discovered in `app/node_modules/next/dist/docs/` worth recording? Add it. (Don't proactively go hunting unless you hit one.)
+- **Next.js gotchas:** any new breaking change discovered in `node_modules/next/dist/docs/` worth recording? Add it. (Don't proactively go hunting unless you hit one.)
 - **Project layout tree:** does the tree in `CLAUDE.md` match the actual directory structure? Add new significant folders, remove stale ones. Keep it brief — leaf detail belongs in the dev plan, not here.
-- **Environment variables:** match `app/.env.local.example` exactly (modulo placeholder values).
+- **Environment variables:** match `.env.local.example` exactly (modulo placeholder values).
 - **Key decisions:** has a new architectural choice been made? (e.g. "we added an X table", "we dropped Y service".) If yes, append; don't restructure.
 
 **Hard limit: keep `CLAUDE.md` under 250 lines.** It loads into every prompt's context window — every line costs tokens forever. If you're tempted to add detail, ask whether it really belongs here or in `docs/sprints/development-plan.md` / a context doc instead. Prefer pointers over copies.

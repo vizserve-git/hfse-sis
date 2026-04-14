@@ -26,8 +26,8 @@ If either file is missing or unreadable, **stop and report** — the project is 
 
 - `git log --oneline -20` — what's shipped recently?
 - `git status` — uncommitted work in progress?
-- `ls app/supabase/migrations/` — current migration count, latest one
-- Glob `app/app/api/**/route.ts` — total API route count
+- `ls supabase/migrations/` — current migration count, latest one
+- Glob `app/api/**/route.ts` — total API route count
 - `TaskList` if available — recent completed / in-progress tasks
 
 Skip this section entirely on the default fast path. It's there for "I haven't touched this in two weeks" mornings.

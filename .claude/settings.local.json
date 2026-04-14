@@ -4,7 +4,8 @@
       "Bash(python:*)",
       "Bash(npx next:*)",
       "Bash(npm install:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(npm run:*)"
     ]
   },
   "enabledPlugins": {

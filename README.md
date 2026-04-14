@@ -15,33 +15,44 @@ One registrar, ~90 students × 4 terms × ~12 subjects. Volume is small; correct
 
 ## Repository layout
 
-This repo is nested — the Next.js project lives in `app/`, not at the root. Vercel's **Root Directory** must be set to `app`.
+The Next.js project lives at the repo root. The `app/` directory below is the Next.js **App Router**, not a wrapper subdirectory. Vercel's **Root Directory** should be left blank (or `./`).
 
 ```
 hfse-markbook/
 ├── CLAUDE.md                   ← contract: hard rules, stack conventions, gotchas
-├── docs/
-│   ├── context/                ← project-overview, grading system, schema, API routes, design system
-│   └── sprints/development-plan.md
-└── app/                        ← the Next.js project (THIS README's directory)
-    ├── app/                    ← App Router pages
-    │   ├── (auth)/login/
-    │   ├── (dashboard)/grading/     ← teacher path
-    │   ├── (dashboard)/admin/       ← registrar path
-    │   ├── (dashboard)/report-cards/
-    │   └── api/                     ← all route handlers
-    ├── components/
-    │   ├── ui/                 ← shadcn primitives + PageShell / PageHeader / Surface
-    │   ├── grading/            ← score-entry-grid, letter-grade-grid, lock-toggle, totals-editor
-    │   └── admin/              ← teacher-assignments-panel
-    ├── lib/
-    │   ├── supabase/           ← client / server / service / middleware clients
-    │   ├── auth/               ← role gate, route gate, NAV_BY_ROLE
-    │   ├── compute/            ← quarterly.ts + annual.ts (both with self-tests)
-    │   ├── audit/              ← grade change diffing
-    │   └── sync/               ← admissions → grading sync
-    ├── supabase/migrations/    ← 001 schema, 002 numerics, 003 teacher_assignments, 004 RLS v1, 005 RLS teacher scoping
-    └── proxy.ts                ← Next 16 middleware — auth + role gate (renamed from middleware.ts)
+├── AGENTS.md                   ← short Next 16 warning for AI tools
+├── README.md                   ← this file
+├── proxy.ts                    ← Next 16 middleware — auth + role gate (renamed from middleware.ts)
+├── package.json
+├── next.config.ts
+├── tsconfig.json
+├── app/                        ← App Router
+│   ├── (auth)/login/
+│   ├── (dashboard)/grading/        ← teacher path
+│   ├── (dashboard)/admin/          ← registrar path
+│   ├── (dashboard)/report-cards/
+│   ├── api/                        ← all route handlers
+│   ├── globals.css             ← single source of truth for design tokens
+│   └── layout.tsx
+├── components/
+│   ├── ui/                     ← shadcn primitives + PageShell / PageHeader / Surface
+│   ├── grading/                ← score-entry-grid, letter-grade-grid, lock-toggle, totals-editor
+│   ├── admin/                  ← teacher-assignments-panel
+│   └── app-sidebar.tsx
+├── lib/
+│   ├── supabase/               ← client / server / service / middleware clients
+│   ├── auth/                   ← role gate, route gate, NAV_BY_ROLE
+│   ├── compute/                ← quarterly.ts + annual.ts (both with self-tests)
+│   ├── audit/                  ← grade change diffing
+│   └── sync/                   ← admissions → grading sync
+├── hooks/
+├── types/
+├── supabase/
+│   ├── migrations/             ← 001 schema → 005 RLS teacher scoping
+│   └── seed.sql                ← AY2026 reference data
+└── docs/
+    ├── context/                ← project-overview, grading system, schema, API routes, design system
+    └── sprints/development-plan.md
 ```
 
 ## Hard rules (the short version)
@@ -54,7 +65,7 @@ These come from `CLAUDE.md` — read that file before writing code.
 4. **`studentNumber` is the only stable student ID** — `enroleeNumber` resets each AY, never cross-link with it.
 5. **Post-lock edits require `approval_reference`** + append one row per changed field to `grade_audit_log`.
 6. **Grade entries and audit logs are append-only.** Withdrawn students stay in `section_students` with `enrollment_status='withdrawn'`.
-7. **Design system is binding.** All colors/fonts/radii come from `app/globals.css` via shadcn semantic tokens — never hardcode hex/oklch, never use `slate-*`/`zinc-*`/`gray-*`. See `docs/context/09-design-system.md`.
+7. **Design system is binding.** All colors/fonts/radii come from `app/globals.css` (App Router root) via shadcn semantic tokens — never hardcode hex/oklch, never use `slate-*`/`zinc-*`/`gray-*`. See `docs/context/09-design-system.md`.
 
 ## Roles
 
@@ -69,7 +80,6 @@ Teacher row-level scoping uses the `teacher_assignments` table (`user × section
 ### 1. Install
 
 ```bash
-cd app
 npm install
 ```
 
@@ -129,14 +139,14 @@ Open `http://localhost:3000`. You'll be redirected to `/login`.
 
 These differ from Next 15 and from typical training data. If something looks wrong, consult `node_modules/next/dist/docs/`.
 
-- **`middleware.ts` is renamed to `proxy.ts`**. The exported function must be named `proxy`. See `app/proxy.ts`.
+- **`middleware.ts` is renamed to `proxy.ts`**. The exported function must be named `proxy`. See `proxy.ts` at the repo root.
 - `cookies()`, `headers()`, `params`, `searchParams` are **async** — always `await`.
 - Use `@supabase/ssr`, never the deprecated `@supabase/auth-helpers-nextjs`.
 - Use `next/navigation` for redirects in server components, never `next/router`.
 
 ## Deployment
 
-Target is **Vercel**, with **Root Directory set to `app`**. Environment variables required in Vercel: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` (mark as sensitive). After the first deploy, update Supabase → Authentication → URL Configuration to add the Vercel domain as both the Site URL and a redirect URL — otherwise `/api/auth/callback` will reject the login redirect.
+Target is **Vercel**, with **Root Directory left blank** (repo root is the Next.js project). Environment variables required in Vercel: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` (mark as sensitive). After the first deploy, update Supabase → Authentication → URL Configuration to add the Vercel domain as both the Site URL and a redirect URL — otherwise `/api/auth/callback` will reject the login redirect.
 
 Full deploy checklist (git init, Vercel project creation, Supabase redirect URLs, smoke test): see the deployment notes in `docs/sprints/development-plan.md` Sprint 6.
 

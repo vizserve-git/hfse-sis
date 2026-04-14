@@ -2,7 +2,7 @@
 
 > **Hard rule.** Every page, layout, and component must conform to this document. See `CLAUDE.md` § Hard rules #7.
 >
-> **Source of truth for colors, fonts, radius, and shadows:** [`app/app/globals.css`](../../app/app/globals.css). This doc describes *how to use* those tokens — it never redefines them. If a rule here conflicts with `globals.css`, `globals.css` wins and this doc must be updated to match.
+> **Source of truth for colors, fonts, radius, and shadows:** [`app/globals.css`](../../app/globals.css) (the App Router `globals.css`, not a nested project). This doc describes *how to use* those tokens — it never redefines them. If a rule here conflicts with `globals.css`, `globals.css` wins and this doc must be updated to match.
 >
 > **Component rule:** always use shadcn/ui primitives from `@/components/ui/*` for any UI element that has one. Never use raw HTML elements (`<button>`, `<input>`, `<select>`, `<textarea>`, `<table>`, `<a>` styled as a button) when a shadcn equivalent exists. If an equivalent does not yet exist, add the shadcn primitive first, then use it — see §10 for the rule, exceptions, and current inventory.
 
@@ -40,7 +40,7 @@ Core tenets:
 
 ## 3. Color system
 
-**Tokens live in `app/app/globals.css` — do not redefine them here, in component files, or in `tailwind.config.*`.** If a new token is needed, add it to `globals.css` first, then reference it from components.
+**Tokens live in `app/globals.css` — do not redefine them here, in component files, or in `tailwind.config.*`.** If a new token is needed, add it to `globals.css` first, then reference it from components.
 
 ### 3.1 Available tokens
 
@@ -86,7 +86,7 @@ Depth: place lighter `bg-card` on `bg-muted` or `bg-background` to create natura
 
 ## 4. Typography & web‑app scale
 
-Fonts are declared in `app/app/globals.css` via `--font-sans`, `--font-serif`, `--font-mono`, and exposed through Tailwind v4's `@theme inline` block. **Do not redeclare them in component code or in a `tailwind.config.*` file — Tailwind v4 has no JS config in this project.**
+Fonts are declared in `app/globals.css` via `--font-sans`, `--font-serif`, `--font-mono`, and exposed through Tailwind v4's `@theme inline` block. **Do not redeclare them in component code or in a `tailwind.config.*` file — Tailwind v4 has no JS config in this project.**
 
 Current families (as defined in `globals.css`):
 
@@ -332,7 +332,7 @@ Page shell and page headers must use the project-local wrappers built on top of 
 
 ### 10.2 Current primitive inventory
 
-Available in `app/components/ui/` today:
+Available in `components/ui/` today:
 
 - `alert`, `badge`, `button`, `card`, `checkbox`, `input`, `label`, `select`, `separator`, `sheet`, `sidebar`, `skeleton`, `table`, `textarea`, `tooltip`
 - Project wrappers: `page-shell`, `page-header`, `surface`
@@ -344,7 +344,7 @@ Available in `app/components/ui/` today:
 The install workflow:
 
 1. Add the required Radix dep: `npm install @radix-ui/react-<name>` from inside `app/`. Commit `package.json` + `package-lock.json` in the same change.
-2. Create `app/components/ui/<name>.tsx` using the shadcn/ui reference implementation, adjusted to this project's conventions:
+2. Create `components/ui/<name>.tsx` using the shadcn/ui reference implementation, adjusted to this project's conventions:
    - Use only semantic token classes (`bg-background`, `text-foreground`, `border-input`, `ring-ring`, etc.).
    - No `slate-*` / `zinc-*` / `gray-*` / raw hex.
    - Keep exports aligned with shadcn's public API so page code reads like the docs.
