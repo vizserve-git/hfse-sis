@@ -61,7 +61,9 @@ Used by: `lib/supabase/admissions.ts::fetchAdmissionsRoster()`, `getStudentsByPa
 | `motherEmail` | `text` | yes | Parent auth lookup (**case-insensitive** — the markbook matches with `.ilike`) |
 | `fatherEmail` | `text` | yes | Parent auth lookup (same) |
 
-Columns the markbook does **not** currently read (but which exist on the table and may be useful later): `passCodeStudent` (per-student code — could drive an alternative parent-auth flow if email matching ever proves unreliable), `guardianEmail`, `levelApplied`, `applicationStatus`, medical/allergy flags, all `father*` / `mother*` / `guardian*` personal data beyond email, sibling info, `residenceHistory`, `feedbackConsent`, etc.
+Columns the markbook does **not** currently read (but which exist on the table and may be useful later): `guardianEmail`, `levelApplied`, `applicationStatus`, medical/allergy flags, all `father*` / `mother*` / `guardian*` personal data beyond email, sibling info, `residenceHistory`, `feedbackConsent`, etc.
+
+> **`passCodeStudent` is legacy and should be ignored.** It was the parent-portal's pre-account auth mechanism (parents entered a per-student code to view their application back when there were no `auth.users` rows for them). Supabase Auth accounts superseded it. The markbook should **not** use `passCodeStudent` for anything, and new features shouldn't revive it as a fallback — if email matching ever proves unreliable, fix it at the account/email level, not by resurrecting a deprecated code.
 
 ### `ay{YY}_enrolment_status` — workflow state per enrolee
 
