@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { unstable_cache } from "next/cache";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,7 @@ import {
   getPipelineCounts,
 } from "@/lib/admissions/dashboard";
 import { getCurrentAcademicYear, requireCurrentAyCode } from "@/lib/academic-year";
-import { getUserRole } from "@/lib/auth/roles";
+import { getRoleFromClaims } from "@/lib/auth/roles";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -75,33 +76,33 @@ const ADMIN_TOOLS: Tool[] = [
 
 export default async function DashboardHome() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const role = getUserRole(user);
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims ?? null;
+  const email = (claims?.email as string | undefined) ?? undefined;
+  const role = getRoleFromClaims(claims);
 
   const canSeeAdmin = role === "registrar" || role === "admin" || role === "superadmin";
   const canSeeGrading = role === "teacher" || role === "registrar" || role === "superadmin";
   const canSeeReportCards = role === "registrar" || role === "admin" || role === "superadmin";
 
-  // Fetch current-AY stats. Service client bypasses RLS so the counts are
-  // the *whole school* view — teachers see the same school-wide numbers
-  // here; their scoped work lives on /grading.
+  // Service client bypasses RLS so stats are the school-wide view — teachers
+  // see the same numbers; their scoped work lives on /grading.
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
-  const stats = currentAy ? await loadStats(service, currentAy.id) : null;
-
-  // Admin-only: pipeline snapshot + stale applications. Gated so teachers
-  // never pay for admissions queries. `getOutdatedApplications` already
-  // applies the spec §1.2 blocklist + 7-day cutoff, so no client-side filter
-  // is needed here — whatever it returns is ready to render.
   const ayCode = canSeeAdmin ? await requireCurrentAyCode(supabase) : null;
-  const [pipeline, outdated] = canSeeAdmin && ayCode
-    ? await Promise.all([
-        getPipelineCounts(ayCode),
-        getOutdatedApplications(ayCode),
-      ])
-    : [null, [] as Awaited<ReturnType<typeof getOutdatedApplications>>];
+
+  // Run stats, pipeline, and outdated-applications in parallel. Each is
+  // independently cached (stats via unstable_cache below; pipeline/outdated
+  // via lib/admissions/dashboard.ts).
+  const [stats, pipeline, outdated] = await Promise.all([
+    currentAy ? loadStats(currentAy.id) : Promise.resolve(null),
+    canSeeAdmin && ayCode ? getPipelineCounts(ayCode) : Promise.resolve(null),
+    canSeeAdmin && ayCode
+      ? getOutdatedApplications(ayCode)
+      : Promise.resolve(
+          [] as Awaited<ReturnType<typeof getOutdatedApplications>>,
+        ),
+  ]);
 
   return (
     <PageShell>
@@ -116,7 +117,7 @@ export default async function DashboardHome() {
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             Signed in as{" "}
-            <span className="font-medium text-foreground">{user?.email}</span>. Here&apos;s where
+            <span className="font-medium text-foreground">{email}</span>. Here&apos;s where
             HFSE stands today.
           </p>
         </div>
@@ -299,90 +300,93 @@ type Stats = {
   publicationsScheduled: number;
 };
 
-async function loadStats(
-  service: ReturnType<typeof createServiceClient>,
-  academicYearId: string,
-): Promise<Stats> {
-  // Sections for current AY.
-  const { count: sectionsActive } = await service
-    .from("sections")
-    .select("*", { count: "exact", head: true })
-    .eq("academic_year_id", academicYearId);
+// School-wide dashboard stats. Cached with a short TTL + a `dashboard-stats`
+// tag so mutations elsewhere (grading, publications) can revalidate on demand
+// via `revalidateTag('dashboard-stats')` when that becomes worth wiring up.
+// Service client is created inside the cached function so the closure is
+// fully serializable and the cache key is deterministic on academicYearId.
+async function loadStatsUncached(academicYearId: string): Promise<Stats> {
+  const service = createServiceClient();
 
-  // Section IDs for current AY (used by two further queries).
-  const { data: sectionRows } = await service
-    .from("sections")
-    .select("id")
-    .eq("academic_year_id", academicYearId);
-  const sectionIds = (sectionRows ?? []).map((r) => r.id as string);
+  // First wave: fetch sections (rows + exact count) and term IDs in parallel.
+  // Combining the two section queries saves one round-trip versus the old
+  // "count head + id rows" pair.
+  const [sectionsRes, termsRes] = await Promise.all([
+    service
+      .from("sections")
+      .select("id", { count: "exact" })
+      .eq("academic_year_id", academicYearId),
+    service
+      .from("terms")
+      .select("id")
+      .eq("academic_year_id", academicYearId),
+  ]);
 
-  // Students currently enrolled in a current-AY section.
-  let studentsActive = 0;
-  if (sectionIds.length > 0) {
-    const { count } = await service
-      .from("section_students")
-      .select("*", { count: "exact", head: true })
-      .eq("enrollment_status", "active")
-      .in("section_id", sectionIds);
-    studentsActive = count ?? 0;
-  }
+  const sectionIds = (sectionsRes.data ?? []).map((r) => r.id as string);
+  const sectionsActive = sectionsRes.count ?? 0;
+  const termIds = (termsRes.data ?? []).map((r) => r.id as string);
 
-  // Grading sheets need to be filtered via terms in current AY.
-  const { data: termRows } = await service
-    .from("terms")
-    .select("id")
-    .eq("academic_year_id", academicYearId);
-  const termIds = (termRows ?? []).map((r) => r.id as string);
+  // Second wave: five dependent counts all in parallel.
+  const nowIso = new Date().toISOString();
+  type CountRes = { count: number | null };
+  const zero: Promise<CountRes> = Promise.resolve({ count: 0 });
 
-  let sheetsOpen = 0;
-  let sheetsLocked = 0;
-  if (termIds.length > 0) {
-    const [{ count: openCount }, { count: lockedCount }] = await Promise.all([
-      service
-        .from("grading_sheets")
-        .select("*", { count: "exact", head: true })
-        .eq("is_locked", false)
-        .in("term_id", termIds),
-      service
-        .from("grading_sheets")
-        .select("*", { count: "exact", head: true })
-        .eq("is_locked", true)
-        .in("term_id", termIds),
+  const [studentsRes, sheetsOpenRes, sheetsLockedRes, pubActiveRes, pubScheduledRes] =
+    await Promise.all([
+      sectionIds.length > 0
+        ? service
+            .from("section_students")
+            .select("*", { count: "exact", head: true })
+            .eq("enrollment_status", "active")
+            .in("section_id", sectionIds)
+        : zero,
+      termIds.length > 0
+        ? service
+            .from("grading_sheets")
+            .select("*", { count: "exact", head: true })
+            .eq("is_locked", false)
+            .in("term_id", termIds)
+        : zero,
+      termIds.length > 0
+        ? service
+            .from("grading_sheets")
+            .select("*", { count: "exact", head: true })
+            .eq("is_locked", true)
+            .in("term_id", termIds)
+        : zero,
+      sectionIds.length > 0
+        ? service
+            .from("report_card_publications")
+            .select("*", { count: "exact", head: true })
+            .in("section_id", sectionIds)
+            .lte("publish_from", nowIso)
+            .gte("publish_until", nowIso)
+        : zero,
+      sectionIds.length > 0
+        ? service
+            .from("report_card_publications")
+            .select("*", { count: "exact", head: true })
+            .in("section_id", sectionIds)
+            .gt("publish_from", nowIso)
+        : zero,
     ]);
-    sheetsOpen = openCount ?? 0;
-    sheetsLocked = lockedCount ?? 0;
-  }
-
-  // Publications: active (now between from/until) vs scheduled (now < from).
-  let publicationsActive = 0;
-  let publicationsScheduled = 0;
-  if (sectionIds.length > 0) {
-    const nowIso = new Date().toISOString();
-    const [{ count: active }, { count: scheduled }] = await Promise.all([
-      service
-        .from("report_card_publications")
-        .select("*", { count: "exact", head: true })
-        .in("section_id", sectionIds)
-        .lte("publish_from", nowIso)
-        .gte("publish_until", nowIso),
-      service
-        .from("report_card_publications")
-        .select("*", { count: "exact", head: true })
-        .in("section_id", sectionIds)
-        .gt("publish_from", nowIso),
-    ]);
-    publicationsActive = active ?? 0;
-    publicationsScheduled = scheduled ?? 0;
-  }
 
   return {
-    studentsActive,
-    sectionsActive: sectionsActive ?? 0,
-    sheetsOpen,
-    sheetsLocked,
-    publicationsActive,
-    publicationsScheduled,
+    studentsActive: studentsRes.count ?? 0,
+    sectionsActive,
+    sheetsOpen: sheetsOpenRes.count ?? 0,
+    sheetsLocked: sheetsLockedRes.count ?? 0,
+    publicationsActive: pubActiveRes.count ?? 0,
+    publicationsScheduled: pubScheduledRes.count ?? 0,
   };
+}
+
+function loadStats(academicYearId: string): Promise<Stats> {
+  return unstable_cache(
+    () => loadStatsUncached(academicYearId),
+    ["dashboard-stats", academicYearId],
+    { revalidate: 60, tags: ["dashboard-stats"] },
+  )();
 }
 
 function formatNumber(n: number): string {

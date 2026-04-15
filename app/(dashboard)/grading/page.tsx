@@ -8,7 +8,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
-import { getUserRole } from '@/lib/auth/roles';
+import { getRoleFromClaims } from '@/lib/auth/roles';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -42,29 +42,47 @@ const first = <T,>(v: T | T[] | null): T | null =>
 export default async function GradingListPage() {
   const supabase = await createClient();
 
-  const { data: user } = await supabase.auth.getUser();
-  const role = getUserRole(user.user);
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims ?? null;
+  const userId = (claims?.sub as string | undefined) ?? null;
+  const role = getRoleFromClaims(claims);
   const canCreate = role === 'registrar' || role === 'admin' || role === 'superadmin';
 
-  const { data: sheets } = await supabase
-    .from('grading_sheets')
-    .select(
-      `id, is_locked, teacher_name,
-       term:terms(id, term_number, label),
-       subject:subjects(id, code, name, is_examinable),
-       section:sections(id, name, level:levels(id, code, label, level_type))`,
-    );
+  // Three independent, RLS-scoped queries run in parallel. All are
+  // authoritative per-request (no caching) because the rows each teacher can
+  // see differ — but the round-trips overlap instead of stacking.
+  const advisorPromise = userId
+    ? supabase
+        .from('teacher_assignments')
+        .select('section:sections(id, name, level:levels(label))')
+        .eq('teacher_user_id', userId)
+        .eq('role', 'form_adviser')
+    : Promise.resolve({ data: [] as unknown });
 
-  // Fetch all grade_entries for blanks_remaining calculation.
-  // Blank = null in any slot of ww/pt/qa (or letter_grade for non-examinable).
-  // Excludes withdrawn and is_na (late enrollee) students from the count.
-  const { data: entriesForBlanks } = await supabase
-    .from('grade_entries')
-    .select(
-      `grading_sheet_id, ww_scores, pt_scores, qa_score, letter_grade, is_na,
-       section_student:section_students(enrollment_status),
-       grading_sheet:grading_sheets(subject:subjects(is_examinable))`,
-    );
+  const [sheetsRes, blanksRes, advisorRes] = await Promise.all([
+    supabase
+      .from('grading_sheets')
+      .select(
+        `id, is_locked, teacher_name,
+         term:terms(id, term_number, label),
+         subject:subjects(id, code, name, is_examinable),
+         section:sections(id, name, level:levels(id, code, label, level_type))`,
+      ),
+    // grade_entries for blanks_remaining calculation.
+    // Blank = null in any slot of ww/pt/qa (or letter_grade for non-examinable).
+    // Excludes withdrawn and is_na (late enrollee) students from the count.
+    supabase
+      .from('grade_entries')
+      .select(
+        `grading_sheet_id, ww_scores, pt_scores, qa_score, letter_grade, is_na,
+         section_student:section_students(enrollment_status),
+         grading_sheet:grading_sheets(subject:subjects(is_examinable))`,
+      ),
+    advisorPromise,
+  ]);
+
+  const sheets = sheetsRes.data;
+  const entriesForBlanks = blanksRes.data;
 
   type EntryForBlanks = {
     grading_sheet_id: string;
@@ -108,19 +126,15 @@ export default async function GradingListPage() {
   }
 
   let advisorySections: Array<{ id: string; name: string; level_label: string | null }> = [];
-  if (user.user) {
-    const { data: advisorAssignments } = await supabase
-      .from('teacher_assignments')
-      .select('section:sections(id, name, level:levels(label))')
-      .eq('teacher_user_id', user.user.id)
-      .eq('role', 'form_adviser');
+  if (userId) {
     type AA = {
       section:
         | { id: string; name: string; level: { label: string } | { label: string }[] | null }
         | { id: string; name: string; level: { label: string } | { label: string }[] | null }[]
         | null;
     };
-    advisorySections = ((advisorAssignments ?? []) as AA[])
+    const advisorAssignments = (advisorRes as { data: AA[] | null }).data;
+    advisorySections = (advisorAssignments ?? [])
       .map((a) => first(a.section))
       .filter(
         (

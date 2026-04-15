@@ -34,6 +34,8 @@ These came up during sprints but were intentionally deferred to keep scope tight
 - Origin check (HMAC) on `/parent/enter` handoff as defense-in-depth. Deliberately skipped for UAT — the existing parent↔student gate is sufficient. Revisit if a real threat materializes.
 - Broader loading-states pass on async actions — folded into each future bite as needed
 - Sprint 6 Bite 5 wishlist: grade color coding (✅ shipped), exceeds-max red border (✅ shipped), withdrawn strike-through (✅ shipped), locked-sheet plain-text mode (✅ shipped). Tab-key cell navigation verified working via native DOM order — no change needed.
+- **No `error.tsx` error boundaries** anywhere in the app — a thrown server component error currently bubbles to Next's default error screen. Add at least `app/(dashboard)/error.tsx` and `app/(parent)/error.tsx` with a graceful "something went wrong" card + retry button when UAT surfaces a user-visible failure.
+- **No test framework configured** — no `vitest` / `@testing-library` / `.test.ts` files exist. The `lib/compute/quarterly.ts` build-time self-test is the only automated check. Worth revisiting if a complex feature lands; today, manual happy-path testing per Workflow §3 is the explicit contract.
 
 **Reference docs:**
 

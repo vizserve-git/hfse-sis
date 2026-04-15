@@ -23,6 +23,12 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
-  return { response, user };
+  // Use getClaims() instead of getUser() to avoid a network round-trip to
+  // Supabase Auth on every navigation. getClaims() verifies the JWT
+  // signature locally against the cached JWKS (requires the project to use
+  // asymmetric signing keys; falls back to getUser() internally on legacy
+  // HS256 projects).
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims ?? null;
+  return { response, claims };
 }

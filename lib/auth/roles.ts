@@ -99,6 +99,19 @@ export function getUserRole(user: User | null | undefined): Role | null {
   return ROLES.includes(raw as Role) ? (raw as Role) : null;
 }
 
+export function getRoleFromClaims(
+  claims: Record<string, unknown> | null | undefined,
+): Role | null {
+  const appMeta = claims?.app_metadata as
+    | Record<string, unknown>
+    | undefined;
+  const userMeta = claims?.user_metadata as
+    | Record<string, unknown>
+    | undefined;
+  const raw = appMeta?.role ?? userMeta?.role;
+  return ROLES.includes(raw as Role) ? (raw as Role) : null;
+}
+
 export function isRouteAllowed(pathname: string, role: Role | null): boolean {
   const rule = ROUTE_ACCESS.find(r => pathname === r.prefix || pathname.startsWith(r.prefix + '/'));
   if (!rule) return true;
