@@ -6,7 +6,7 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 
 **Stack:** Next.js 16 (App Router) + Supabase + Vercel. Python/FastAPI/WeasyPrint PDF service from the original plan has been deferred (see Sprint 6 decision note); browser print handles current volume.
 
-## Status snapshot (last updated 2026-04-18)
+## Status snapshot (last updated 2026-04-15)
 
 | Sprint | Title | Status |
 |---|---|---|
@@ -34,7 +34,7 @@ These came up during sprints but were intentionally deferred to keep scope tight
 - Origin check (HMAC) on `/parent/enter` handoff as defense-in-depth. Deliberately skipped for UAT — the existing parent↔student gate is sufficient. Revisit if a real threat materializes.
 - Broader loading-states pass on async actions — folded into each future bite as needed
 - Sprint 6 Bite 5 wishlist: grade color coding (✅ shipped), exceeds-max red border (✅ shipped), withdrawn strike-through (✅ shipped), locked-sheet plain-text mode (✅ shipped). Tab-key cell navigation verified working via native DOM order — no change needed.
-- **No `error.tsx` error boundaries** anywhere in the app — a thrown server component error currently bubbles to Next's default error screen. Add at least `app/(dashboard)/error.tsx` and `app/(parent)/error.tsx` with a graceful "something went wrong" card + retry button when UAT surfaces a user-visible failure.
+- ~~**No `error.tsx` error boundaries** anywhere in the app~~ — ✅ shipped 2026-04-15. `app/(dashboard)/error.tsx` and `app/(parent)/error.tsx` both render a centered shadcn Card with `AlertTriangle` icon, retry button, and dev-only error details (`error.message` / `digest` gated behind `NODE_ENV`). `role="alert"` + `aria-live="assertive"` for screen readers. `global-error.tsx` and `not-found.tsx` still deferred — add if a UAT failure demands them.
 - **No test framework configured** — no `vitest` / `@testing-library` / `.test.ts` files exist. The `lib/compute/quarterly.ts` build-time self-test is the only automated check. Worth revisiting if a complex feature lands; today, manual happy-path testing per Workflow §3 is the explicit contract.
 
 **Reference docs:**

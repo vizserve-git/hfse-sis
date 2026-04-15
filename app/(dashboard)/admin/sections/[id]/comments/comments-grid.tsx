@@ -352,6 +352,7 @@ export function CommentsGrid({
                     size="sm"
                     onClick={() => void saveCurrent()}
                     disabled={selected.withdrawn || saving}>
+                    {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
                     Save comment
                   </Button>
                   <Button
@@ -359,6 +360,7 @@ export function CommentsGrid({
                     size="sm"
                     onClick={() => void saveAndNext()}
                     disabled={selected.withdrawn || saving || !nextPending}>
+                    {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
                     Save & next pending
                   </Button>
                 </div>

@@ -55,7 +55,8 @@
       "Bash(node -e \"console.log\\(require\\('./node_modules/tailwindcss/package.json'\\).version\\)\")",
       "Bash(node -e \"console.log\\(require\\('./node_modules/tw-animate-css/package.json'\\).peerDependencies || 'no peers'\\)\")",
       "Bash(awk -F/ '{dir=$\\(NF-1\\); sub\\(/\\\\/[^/]+$/, \"\"\\); print dir, \\(NF%1\\), $0}')",
-      "Bash(rm -rf .next)"
+      "Bash(rm -rf .next)",
+      "Bash(git commit -m ' *)"
     ]
   },
   "enabledMcpjsonServers": [
