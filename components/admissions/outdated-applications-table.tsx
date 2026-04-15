@@ -632,7 +632,11 @@ function LevelCombobox({
             </button>
           )}
         </div>
-        <div className="max-h-[220px] overflow-y-auto py-1">
+        <div
+          className="max-h-[220px] overflow-y-auto overscroll-contain py-1"
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
           {filtered.length === 0 ? (
             <div className="px-3 py-4 text-center text-xs text-muted-foreground">
               No levels match &ldquo;{query}&rdquo;

@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, Send } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, Search, Send } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Sheet,
@@ -173,24 +174,15 @@ export function RequestEditButton({ sheetId, isExaminable, wwSlotCount, ptSlotCo
                 control={form.control}
                 name="grade_entry_id"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="flex flex-col">
                     <FormLabel>Student</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Pick a student…" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {students
-                          .filter((s) => !s.withdrawn)
-                          .map((s) => (
-                            <SelectItem key={s.entry_id} value={s.entry_id}>
-                              #{s.index_number} · {s.student_name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                    <FormControl>
+                      <StudentCombobox
+                        students={students}
+                        value={field.value}
+                        onChange={field.onChange}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -355,5 +347,120 @@ export function RequestEditButton({ sheetId, isExaminable, wwSlotCount, ptSlotCo
         </Form>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function StudentCombobox({
+  students,
+  value,
+  onChange,
+}: {
+  students: RequestableStudent[];
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const eligible = useMemo(() => students.filter((s) => !s.withdrawn), [students]);
+  const selected = useMemo(
+    () => eligible.find((s) => s.entry_id === value) ?? null,
+    [eligible, value],
+  );
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return eligible;
+    return eligible.filter((s) => {
+      const hay = `#${s.index_number} ${s.student_name} ${s.student_number}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [eligible, query]);
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setQuery("");
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="h-9 w-full justify-between font-normal"
+        >
+          <span className={selected ? "truncate text-foreground" : "truncate text-muted-foreground"}>
+            {selected ? `#${selected.index_number} · ${selected.student_name}` : "Pick a student…"}
+          </span>
+          <ChevronsUpDown className="ml-2 size-3.5 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-[var(--radix-popover-trigger-width)] p-0"
+        onOpenAutoFocus={(e) => {
+          // Let the Input inside grab focus instead of the first list button.
+          e.preventDefault();
+        }}
+      >
+        <div className="relative border-b border-border p-2">
+          <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Type a name or index…"
+            className="h-8 border-0 bg-transparent pl-7 shadow-none focus-visible:ring-0"
+          />
+        </div>
+        <div
+          className="max-h-64 overflow-y-auto overscroll-contain p-1"
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
+          {filtered.length === 0 ? (
+            <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+              No students match.
+            </div>
+          ) : (
+            filtered.map((s) => {
+              const isSelected = s.entry_id === value;
+              return (
+                <button
+                  key={s.entry_id}
+                  type="button"
+                  onClick={() => {
+                    onChange(s.entry_id);
+                    setOpen(false);
+                    setQuery("");
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+                >
+                  <Check
+                    className={
+                      isSelected
+                        ? "size-3.5 shrink-0 text-brand-indigo"
+                        : "size-3.5 shrink-0 opacity-0"
+                    }
+                  />
+                  <span className="truncate">
+                    <span className="tabular-nums text-muted-foreground">#{s.index_number}</span>
+                    <span className="mx-1.5 text-muted-foreground">·</span>
+                    {s.student_name}
+                  </span>
+                  <span className="ml-auto pl-2 font-mono text-[10px] tabular-nums text-muted-foreground">
+                    {s.student_number}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
