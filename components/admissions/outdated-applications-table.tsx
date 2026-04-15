@@ -1,6 +1,5 @@
-'use client';
+"use client";
 
-import * as React from 'react';
 import {
   flexRender,
   getCoreRowModel,
@@ -13,7 +12,7 @@ import {
   type ColumnDef,
   type ColumnFiltersState,
   type SortingState,
-} from '@tanstack/react-table';
+} from "@tanstack/react-table";
 import {
   AlertCircle,
   AlertTriangle,
@@ -36,42 +35,26 @@ import {
   X,
   XCircle,
   type LucideIcon,
-} from 'lucide-react';
+} from "lucide-react";
+import * as React from "react";
 
-import type { OutdatedRow } from '@/lib/admissions/dashboard';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { OutdatedRow } from "@/lib/admissions/dashboard";
 
-type StaleTier = 'unknown' | 'green' | 'amber' | 'red';
+type StaleTier = "unknown" | "green" | "amber" | "red";
 
 function tierFor(days: number | null): StaleTier {
-  if (days === null) return 'unknown';
-  if (days >= 14) return 'red';
-  if (days >= 7) return 'amber';
-  return 'green';
+  if (days === null) return "unknown";
+  if (days >= 14) return "red";
+  if (days >= 7) return "amber";
+  return "green";
 }
 
 // Lightweight RAG indicator for the "In pipeline" column. Full badges live in
@@ -79,27 +62,12 @@ function tierFor(days: number | null): StaleTier {
 // doesn't fight the staleness column's visual weight. Dot + tinted count.
 function PipelineAgeCell({ days }: { days: number }) {
   const tier = tierFor(days);
-  const dotClass =
-    tier === 'red'
-      ? 'bg-destructive'
-      : tier === 'amber'
-        ? 'bg-chart-4'
-        : 'bg-brand-mint';
-  const textClass =
-    tier === 'red'
-      ? 'text-destructive'
-      : tier === 'amber'
-        ? 'text-ink'
-        : 'text-ink-3';
+  const dotClass = tier === "red" ? "bg-destructive" : tier === "amber" ? "bg-chart-4" : "bg-brand-mint";
+  const textClass = tier === "red" ? "text-destructive" : tier === "amber" ? "text-ink" : "text-ink-3";
   return (
     <span className="inline-flex items-center gap-2">
-      <span
-        className={`size-1.5 rounded-full ${dotClass}`}
-        aria-hidden
-      />
-      <span className={`text-sm font-medium tabular-nums ${textClass}`}>
-        {days}d
-      </span>
+      <span className={`size-1.5 rounded-full ${dotClass}`} aria-hidden />
+      <span className={`text-sm font-medium tabular-nums ${textClass}`}>{days}d</span>
     </span>
   );
 }
@@ -107,49 +75,36 @@ function PipelineAgeCell({ days }: { days: number }) {
 // Follows the canonical badge pattern from grading-data-table:
 // h-6 mono-caps, tracking-[0.12em], h-3 icons. Every table-cell badge in the
 // app uses this shape so they read as one visual family.
-const BADGE_BASE =
-  'h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]';
+const BADGE_BASE = "h-6 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em]";
 
 function StalenessBadge({ days }: { days: number | null }) {
   const tier = tierFor(days);
-  if (tier === 'unknown') {
+  if (tier === "unknown") {
     return (
-      <Badge
-        variant="outline"
-        className={`${BADGE_BASE} border-hairline bg-muted text-ink-3`}
-      >
+      <Badge variant="outline" className={`${BADGE_BASE} border-hairline bg-muted text-ink-3`}>
         <HelpCircle className="h-3 w-3" aria-hidden />
         Never updated
       </Badge>
     );
   }
-  if (tier === 'red') {
+  if (tier === "red") {
     return (
-      <Badge
-        variant="outline"
-        className={`${BADGE_BASE} border-destructive/40 bg-destructive/10 text-destructive`}
-      >
+      <Badge variant="outline" className={`${BADGE_BASE} border-destructive/40 bg-destructive/10 text-destructive`}>
         <AlertTriangle className="h-3 w-3" aria-hidden />
         {days}d stale
       </Badge>
     );
   }
-  if (tier === 'amber') {
+  if (tier === "amber") {
     return (
-      <Badge
-        variant="outline"
-        className={`${BADGE_BASE} border-chart-4/50 bg-chart-4/15 text-ink`}
-      >
+      <Badge variant="outline" className={`${BADGE_BASE} border-chart-4/50 bg-chart-4/15 text-ink`}>
         <AlertCircle className="h-3 w-3" aria-hidden />
         {days}d stale
       </Badge>
     );
   }
   return (
-    <Badge
-      variant="outline"
-      className={`${BADGE_BASE} border-brand-mint bg-brand-mint/30 text-ink`}
-    >
+    <Badge variant="outline" className={`${BADGE_BASE} border-brand-mint bg-brand-mint/30 text-ink`}>
       <CheckCircle2 className="h-3 w-3" aria-hidden />
       Fresh · {days}d
     </Badge>
@@ -169,45 +124,45 @@ type StatusStyle = {
 const STATUS_STYLES: Record<string, StatusStyle> = {
   Submitted: {
     icon: FileText,
-    label: 'Submitted',
-    className: 'border-brand-indigo/40 bg-brand-indigo/10 text-brand-indigo',
+    label: "Submitted",
+    className: "border-brand-indigo/40 bg-brand-indigo/10 text-brand-indigo",
   },
-  'Ongoing Verification': {
+  "Ongoing Verification": {
     icon: ClipboardList,
-    label: 'Verification',
-    className: 'border-chart-4/50 bg-chart-4/15 text-ink',
+    label: "Verification",
+    className: "border-chart-4/50 bg-chart-4/15 text-ink",
   },
   Processing: {
     icon: Cog,
-    label: 'Processing',
-    className: 'border-brand-indigo-soft/60 bg-brand-indigo-soft/15 text-ink',
+    label: "Processing",
+    className: "border-brand-indigo-soft/60 bg-brand-indigo-soft/15 text-ink",
   },
   Enrolled: {
     icon: GraduationCap,
-    label: 'Enrolled',
-    className: 'border-brand-mint bg-brand-mint/30 text-ink',
+    label: "Enrolled",
+    className: "border-brand-mint bg-brand-mint/30 text-ink",
   },
-  'Enrolled (Conditional)': {
+  "Enrolled (Conditional)": {
     icon: Asterisk,
-    label: 'Conditional',
-    className: 'border-brand-mint/60 bg-brand-mint/15 text-ink',
+    label: "Conditional",
+    className: "border-brand-mint/60 bg-brand-mint/15 text-ink",
   },
   Withdrawn: {
     icon: UserMinus,
-    label: 'Withdrawn',
-    className: 'border-destructive/30 bg-destructive/5 text-ink-4',
+    label: "Withdrawn",
+    className: "border-destructive/30 bg-destructive/5 text-ink-4",
   },
   Cancelled: {
     icon: XCircle,
-    label: 'Cancelled',
-    className: 'border-destructive/30 bg-destructive/5 text-ink-4',
+    label: "Cancelled",
+    className: "border-destructive/30 bg-destructive/5 text-ink-4",
   },
 };
 
 const UNKNOWN_STATUS: StatusStyle = {
   icon: HelpCircle,
-  label: 'No status',
-  className: 'border-hairline bg-muted text-ink-3',
+  label: "No status",
+  className: "border-hairline bg-muted text-ink-3",
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -222,26 +177,26 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const formatDate = (iso: string | null): string => {
-  if (!iso) return '—';
+  if (!iso) return "—";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-SG', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-SG", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 };
 
-type StatusFilter = 'all' | 'red' | 'amber' | 'unknown';
+type StatusFilter = "all" | "red" | "amber" | "unknown";
 
 const columns: ColumnDef<OutdatedRow>[] = [
   {
-    accessorKey: 'fullName',
+    accessorKey: "fullName",
     header: ({ column }) => (
       <SortableHeader
         label="Applicant"
         sorted={column.getIsSorted()}
-        onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
       />
     ),
     cell: ({ row }) => (
@@ -254,15 +209,11 @@ const columns: ColumnDef<OutdatedRow>[] = [
     ),
   },
   {
-    accessorKey: 'levelApplied',
-    header: 'Level',
-    cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground">
-        {row.original.levelApplied ?? '—'}
-      </span>
-    ),
+    accessorKey: "levelApplied",
+    header: "Level",
+    cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.levelApplied ?? "—"}</span>,
     filterFn: (row, id, value) => {
-      const v = row.getValue<string | null>(id) ?? '—';
+      const v = row.getValue<string | null>(id) ?? "—";
       if (Array.isArray(value)) {
         return value.length === 0 || value.includes(v);
       }
@@ -270,18 +221,18 @@ const columns: ColumnDef<OutdatedRow>[] = [
     },
   },
   {
-    accessorKey: 'status',
-    header: 'Status',
+    accessorKey: "status",
+    header: "Status",
     cell: ({ row }) => <StatusBadge status={row.original.status} />,
   },
   {
-    id: 'tier',
+    id: "tier",
     accessorFn: (row) => tierFor(row.daysSinceUpdate),
     header: ({ column }) => (
       <SortableHeader
         label="Staleness"
         sorted={column.getIsSorted()}
-        onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
       />
     ),
     cell: ({ row }) => <StalenessBadge days={row.original.daysSinceUpdate} />,
@@ -300,21 +251,19 @@ const columns: ColumnDef<OutdatedRow>[] = [
     },
   },
   {
-    accessorKey: 'lastUpdated',
-    header: 'Last updated',
+    accessorKey: "lastUpdated",
+    header: "Last updated",
     cell: ({ row }) => (
-      <span className="text-sm text-muted-foreground tabular-nums">
-        {formatDate(row.original.lastUpdated)}
-      </span>
+      <span className="text-sm text-muted-foreground tabular-nums">{formatDate(row.original.lastUpdated)}</span>
     ),
   },
   {
-    accessorKey: 'daysInPipeline',
+    accessorKey: "daysInPipeline",
     header: ({ column }) => (
       <SortableHeader
         label="In pipeline"
         sorted={column.getIsSorted()}
-        onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
       />
     ),
     cell: ({ row }) => <PipelineAgeCell days={row.original.daysInPipeline} />,
@@ -322,12 +271,10 @@ const columns: ColumnDef<OutdatedRow>[] = [
 ];
 
 export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
-  const [sorting, setSorting] = React.useState<SortingState>([
-    { id: 'tier', desc: true },
-  ]);
+  const [sorting, setSorting] = React.useState<SortingState>([{ id: "tier", desc: true }]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
-  const [globalFilter, setGlobalFilter] = React.useState('');
-  const [status, setStatus] = React.useState<StatusFilter>('all');
+  const [globalFilter, setGlobalFilter] = React.useState("");
+  const [status, setStatus] = React.useState<StatusFilter>("all");
 
   const table = useReactTable({
     data: rows,
@@ -337,12 +284,12 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
     globalFilterFn: (row, _id, value) => {
-      const v = String(value ?? '').toLowerCase();
+      const v = String(value ?? "").toLowerCase();
       if (!v) return true;
       return (
         row.original.fullName.toLowerCase().includes(v) ||
         row.original.enroleeNumber.toLowerCase().includes(v) ||
-        (row.original.levelApplied ?? '').toLowerCase().includes(v) ||
+        (row.original.levelApplied ?? "").toLowerCase().includes(v) ||
         row.original.status.toLowerCase().includes(v)
       );
     },
@@ -357,17 +304,17 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
 
   // Keep the `tier` column filter in sync with the status tab.
   React.useEffect(() => {
-    const tierCol = table.getColumn('tier');
+    const tierCol = table.getColumn("tier");
     if (!tierCol) return;
-    tierCol.setFilterValue(status === 'all' ? undefined : status);
+    tierCol.setFilterValue(status === "all" ? undefined : status);
   }, [status, table]);
 
   // Level dropdown facets.
-  const levelColumn = table.getColumn('levelApplied');
+  const levelColumn = table.getColumn("levelApplied");
   const levelValues = React.useMemo(() => {
     if (!levelColumn) return [] as string[];
     return Array.from(levelColumn.getFacetedUniqueValues().keys())
-      .filter((v): v is string => typeof v === 'string' && v.length > 0)
+      .filter((v): v is string => typeof v === "string" && v.length > 0)
       .sort();
   }, [levelColumn]);
   const selectedLevels = (levelColumn?.getFilterValue() as string[] | undefined) ?? [];
@@ -380,27 +327,23 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
     let unknown = 0;
     for (const r of rows) {
       const t = tierFor(r.daysSinceUpdate);
-      if (t === 'red') red += 1;
-      else if (t === 'amber') amber += 1;
-      else if (t === 'unknown') unknown += 1;
+      if (t === "red") red += 1;
+      else if (t === "amber") amber += 1;
+      else if (t === "unknown") unknown += 1;
     }
     return { red, amber, unknown };
   }, [rows]);
 
-  const hasFilter =
-    globalFilter.length > 0 || selectedLevels.length > 0 || status !== 'all';
+  const hasFilter = globalFilter.length > 0 || selectedLevels.length > 0 || status !== "all";
 
   if (rows.length === 0) {
     return (
       <Card className="items-center py-12 text-center">
         <div className="flex flex-col items-center gap-3">
           <CheckCircle2 className="size-6 text-chart-5" />
-          <p className="font-serif text-lg font-semibold text-foreground">
-            Nothing stale.
-          </p>
+          <p className="font-serif text-lg font-semibold text-foreground">Nothing stale.</p>
           <p className="max-w-md text-sm text-muted-foreground">
-            Every active application has been touched recently. Keep the
-            momentum going.
+            Every active application has been touched recently. Keep the momentum going.
           </p>
         </div>
       </Card>
@@ -425,9 +368,7 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
           <LevelCombobox
             values={levelValues}
             selected={selectedLevels}
-            onChange={(next) =>
-              levelColumn?.setFilterValue(next.length === 0 ? undefined : next)
-            }
+            onChange={(next) => levelColumn?.setFilterValue(next.length === 0 ? undefined : next)}
           />
 
           {hasFilter && (
@@ -435,11 +376,10 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
               variant="ghost"
               size="sm"
               onClick={() => {
-                setGlobalFilter('');
-                setStatus('all');
+                setGlobalFilter("");
+                setStatus("all");
                 setColumnFilters([]);
-              }}
-            >
+              }}>
               <X className="h-3 w-3" />
               Clear
             </Button>
@@ -449,31 +389,64 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
         <Tabs value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
           <TabsList>
             <TabsTrigger value="all">
-              All{' '}
-              <span className="ml-1 font-mono text-[10px] text-muted-foreground">
-                {rows.length}
-              </span>
+              All <span className="ml-1 font-mono text-[10px] text-muted-foreground">{rows.length}</span>
             </TabsTrigger>
             <TabsTrigger value="red">
-              Critical{' '}
-              <span className="ml-1 font-mono text-[10px] text-muted-foreground">
-                {counts.red}
-              </span>
+              Critical <span className="ml-1 font-mono text-[10px] text-muted-foreground">{counts.red}</span>
             </TabsTrigger>
             <TabsTrigger value="amber">
-              Warning{' '}
-              <span className="ml-1 font-mono text-[10px] text-muted-foreground">
-                {counts.amber}
-              </span>
+              Warning <span className="ml-1 font-mono text-[10px] text-muted-foreground">{counts.amber}</span>
             </TabsTrigger>
             <TabsTrigger value="unknown">
-              Never{' '}
-              <span className="ml-1 font-mono text-[10px] text-muted-foreground">
-                {counts.unknown}
-              </span>
+              Never <span className="ml-1 font-mono text-[10px] text-muted-foreground">{counts.unknown}</span>
             </TabsTrigger>
           </TabsList>
         </Tabs>
+      </div>
+
+      {/* Staleness legend */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border bg-white px-3 py-2">
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Staleness
+        </span>
+        <LegendItem
+          badge={
+            <Badge variant="outline" className={`${BADGE_BASE} border-brand-mint bg-brand-mint/30 text-ink`}>
+              <CheckCircle2 className="h-3 w-3" aria-hidden />
+              Fresh
+            </Badge>
+          }
+          hint="< 7 days"
+        />
+        <LegendItem
+          badge={
+            <Badge variant="outline" className={`${BADGE_BASE} border-chart-4/50 bg-chart-4/15 text-ink`}>
+              <AlertCircle className="h-3 w-3" aria-hidden />
+              Warning
+            </Badge>
+          }
+          hint="7–13 days"
+        />
+        <LegendItem
+          badge={
+            <Badge
+              variant="outline"
+              className={`${BADGE_BASE} border-destructive/40 bg-destructive/10 text-destructive`}>
+              <AlertTriangle className="h-3 w-3" aria-hidden />
+              Critical
+            </Badge>
+          }
+          hint="≥ 14 days"
+        />
+        <LegendItem
+          badge={
+            <Badge variant="outline" className={`${BADGE_BASE} border-hairline bg-muted text-ink-3`}>
+              <HelpCircle className="h-3 w-3" aria-hidden />
+              Never updated
+            </Badge>
+          }
+          hint="no timestamp"
+        />
       </div>
 
       {/* Table */}
@@ -484,9 +457,7 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
               <TableRow key={hg.id} className="bg-muted/40 hover:bg-muted/40">
                 {hg.headers.map((h) => (
                   <TableHead key={h.id}>
-                    {h.isPlaceholder
-                      ? null
-                      : flexRender(h.column.columnDef.header, h.getContext())}
+                    {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
                   </TableHead>
                 ))}
               </TableRow>
@@ -497,18 +468,13 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
               table.getRowModel().rows.map((row) => (
                 <TableRow key={row.id}>
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
+                    <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
                   ))}
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-32 text-center text-sm text-muted-foreground"
-                >
+                <TableCell colSpan={columns.length} className="h-32 text-center text-sm text-muted-foreground">
                   No applications match the current filters.
                 </TableCell>
               </TableRow>
@@ -521,17 +487,14 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
       <div className="flex flex-col-reverse items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
           {table.getFilteredRowModel().rows.length} of {rows.length} application
-          {rows.length === 1 ? '' : 's'}
+          {rows.length === 1 ? "" : "s"}
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              Rows per page
-            </span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Rows per page</span>
             <Select
               value={`${table.getState().pagination.pageSize}`}
-              onValueChange={(v) => table.setPageSize(Number(v))}
-            >
+              onValueChange={(v) => table.setPageSize(Number(v))}>
               <SelectTrigger className="h-8 w-[70px]">
                 <SelectValue />
               </SelectTrigger>
@@ -546,8 +509,7 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
           </div>
 
           <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
-            Page {table.getState().pagination.pageIndex + 1} of{' '}
-            {Math.max(table.getPageCount(), 1)}
+            Page {table.getState().pagination.pageIndex + 1} of {Math.max(table.getPageCount(), 1)}
           </div>
 
           <div className="flex items-center gap-1">
@@ -557,8 +519,7 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
               className="size-8"
               onClick={() => table.setPageIndex(0)}
               disabled={!table.getCanPreviousPage()}
-              aria-label="First page"
-            >
+              aria-label="First page">
               <ChevronsLeft className="h-4 w-4" />
             </Button>
             <Button
@@ -567,8 +528,7 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
               className="size-8"
               onClick={() => table.previousPage()}
               disabled={!table.getCanPreviousPage()}
-              aria-label="Previous page"
-            >
+              aria-label="Previous page">
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
@@ -577,8 +537,7 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
               className="size-8"
               onClick={() => table.nextPage()}
               disabled={!table.getCanNextPage()}
-              aria-label="Next page"
-            >
+              aria-label="Next page">
               <ChevronRight className="h-4 w-4" />
             </Button>
             <Button
@@ -587,8 +546,7 @@ export function OutdatedApplicationsTable({ rows }: { rows: OutdatedRow[] }) {
               className="size-8"
               onClick={() => table.setPageIndex(table.getPageCount() - 1)}
               disabled={!table.getCanNextPage()}
-              aria-label="Last page"
-            >
+              aria-label="Last page">
               <ChevronsRight className="h-4 w-4" />
             </Button>
           </div>
@@ -613,7 +571,7 @@ function LevelCombobox({
   onChange: (next: string[]) => void;
 }) {
   const [open, setOpen] = React.useState(false);
-  const [query, setQuery] = React.useState('');
+  const [query, setQuery] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   // Focus the search input when the popover opens. Radix focus management
@@ -623,7 +581,7 @@ function LevelCombobox({
     if (open) {
       requestAnimationFrame(() => inputRef.current?.focus());
     } else {
-      setQuery('');
+      setQuery("");
     }
   }, [open]);
 
@@ -667,10 +625,9 @@ function LevelCombobox({
           {query && (
             <button
               type="button"
-              onClick={() => setQuery('')}
+              onClick={() => setQuery("")}
               className="text-muted-foreground hover:text-foreground"
-              aria-label="Clear search"
-            >
+              aria-label="Clear search">
               <X className="size-3.5" />
             </button>
           )}
@@ -689,15 +646,9 @@ function LevelCombobox({
                   type="button"
                   onClick={() => toggle(lvl)}
                   className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-                  aria-pressed={isSelected}
-                >
+                  aria-pressed={isSelected}>
                   <span className="truncate">{lvl}</span>
-                  {isSelected && (
-                    <Check
-                      className="size-3.5 text-primary shrink-0"
-                      aria-hidden
-                    />
-                  )}
+                  {isSelected && <Check className="size-3.5 text-primary shrink-0" aria-hidden />}
                 </button>
               );
             })
@@ -711,9 +662,8 @@ function LevelCombobox({
               className="w-full justify-center"
               onClick={() => {
                 onChange([]);
-                setQuery('');
-              }}
-            >
+                setQuery("");
+              }}>
               Clear {selected.length} selected
             </Button>
           </div>
@@ -723,26 +673,33 @@ function LevelCombobox({
   );
 }
 
+function LegendItem({ badge, hint }: { badge: React.ReactNode; hint: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {badge}
+      <span className="text-[11px] text-muted-foreground tabular-nums">{hint}</span>
+    </span>
+  );
+}
+
 function SortableHeader({
   label,
   sorted,
   onToggle,
 }: {
   label: string;
-  sorted: false | 'asc' | 'desc';
+  sorted: false | "asc" | "desc";
   onToggle: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      className="group -ml-2 inline-flex h-8 items-center gap-1 rounded-md px-2 text-left font-medium transition-colors hover:bg-muted"
-    >
+      className="group -ml-2 inline-flex h-8 items-center gap-1 rounded-md px-2 text-left font-medium transition-colors hover:bg-muted">
       {label}
       <ArrowUpDown
         className={
-          'h-3 w-3 transition-opacity ' +
-          (sorted ? 'opacity-100 text-foreground' : 'opacity-40 group-hover:opacity-70')
+          "h-3 w-3 transition-opacity " + (sorted ? "opacity-100 text-foreground" : "opacity-40 group-hover:opacity-70")
         }
       />
     </button>
