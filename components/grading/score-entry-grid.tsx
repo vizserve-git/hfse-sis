@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -70,6 +70,8 @@ export function ScoreEntryGrid({
   requireApproval = false,
 }: Props) {
   const [rows, setRows] = useState<GradeRow[]>(initialRows);
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
   const [savingId, setSavingId] = useState<string | null>(null);
   const [filters, setFilters] = useState<GridFilters>(DEFAULT_GRID_FILTERS);
   const { requireChangeReference, dialog: approvalDialog } = useChangeReference();
@@ -133,7 +135,7 @@ export function ScoreEntryGrid({
         });
         const data = await res.json();
         if (!res.ok) {
-          const row = rows.find((r) => r.entry_id === entryId);
+          const row = rowsRef.current.find((r) => r.entry_id === entryId);
           toast.error(
             `Failed to save ${row ? `#${row.index_number} ${row.student_name}` : 'entry'}: ${data.error ?? 'save failed'}`,
           );
@@ -163,7 +165,7 @@ export function ScoreEntryGrid({
         setSavingId(null);
       }
     },
-    [sheetId, requireApproval, requireChangeReference, rows],
+    [sheetId, requireApproval, requireChangeReference],
   );
 
   const updateLocal = useCallback(

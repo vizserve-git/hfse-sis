@@ -1,8 +1,7 @@
 import { redirect } from 'next/navigation';
 
-import { createClient } from '@/lib/supabase/server';
+import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { getUserRole } from '@/lib/auth/roles';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { ChangeRequestsDataTable, type AdminRequestRow } from './change-requests-data-table';
@@ -12,10 +11,9 @@ export default async function AdminChangeRequestsPage({
 }: {
   searchParams: Promise<{ sheet_id?: string }>;
 }) {
-  const supabase = await createClient();
-  const { data: userRes } = await supabase.auth.getUser();
-  if (!userRes.user) redirect('/login');
-  const role = getUserRole(userRes.user);
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) redirect('/login');
+  const { role } = sessionUser;
   if (!role || (role !== 'admin' && role !== 'superadmin' && role !== 'registrar')) {
     redirect('/');
   }

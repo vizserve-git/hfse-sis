@@ -22,7 +22,10 @@ export type AuditAction =
   | 'grade_change_rejected'
   | 'grade_change_cancelled'
   | 'grade_change_applied'
-  | 'grade_correction';
+  | 'grade_correction'
+  | 'pfile.upload'
+  | 'pfile.approve'
+  | 'pfile.reject';
 
 export type AuditEntityType =
   | 'grading_sheet'
@@ -33,7 +36,8 @@ export type AuditEntityType =
   | 'report_card_comment'
   | 'report_card_publication'
   | 'sync_batch'
-  | 'grade_change_request';
+  | 'grade_change_request'
+  | 'enrolment_document';
 
 type LogActionParams = {
   service: SupabaseClient;

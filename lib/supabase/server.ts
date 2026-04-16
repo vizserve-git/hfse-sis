@@ -1,5 +1,26 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { getRoleFromClaims, type Role } from '@/lib/auth/roles';
+
+/** Lightweight user identity from JWT claims — no network round-trip. */
+export type SessionUser = { id: string; email: string; role: Role | null };
+
+/**
+ * Extract user identity from the session JWT via `getClaims()`.
+ * This avoids the Supabase Auth network call that `getUser()` makes.
+ * Returns `null` if no valid session exists.
+ */
+export async function getSessionUser(): Promise<SessionUser | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims as Record<string, unknown> | null | undefined;
+  if (!claims?.sub) return null;
+  return {
+    id: String(claims.sub),
+    email: String(claims.email ?? ''),
+    role: getRoleFromClaims(claims),
+  };
+}
 
 export async function createClient() {
   const cookieStore = await cookies();

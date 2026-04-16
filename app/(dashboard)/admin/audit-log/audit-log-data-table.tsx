@@ -1,7 +1,5 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import Link from 'next/link';
 import {
   flexRender,
   getCoreRowModel,
@@ -14,7 +12,7 @@ import {
   type ColumnDef,
   type ColumnFiltersState,
   type SortingState,
-} from '@tanstack/react-table';
+} from "@tanstack/react-table";
 import {
   ArrowRight,
   ArrowUpDown,
@@ -29,16 +27,26 @@ import {
   History,
   Search,
   X,
-} from 'lucide-react';
-import type { DateRange } from 'react-day-picker';
+} from "lucide-react";
+import Link from "next/link";
+import * as React from "react";
+import type { DateRange } from "react-day-picker";
 
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -46,23 +54,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export type MergedRow = {
   id: string;
@@ -73,7 +68,7 @@ export type MergedRow = {
   entity_id: string | null;
   context: Record<string, unknown>;
   sheet_id: string | null;
-  source: 'audit_log' | 'grade_audit_log';
+  source: "audit_log" | "grade_audit_log";
 };
 
 type Props = {
@@ -83,30 +78,21 @@ type Props = {
   canExport?: boolean;
 };
 
-export function AuditLogDataTable({
-  rows,
-  initialSheetIdFilter,
-  initialActionFilter,
-  canExport = false,
-}: Props) {
-  const [exportRange, setExportRange] = React.useState<DateRange | undefined>(
-    undefined,
-  );
+export function AuditLogDataTable({ rows, initialSheetIdFilter, initialActionFilter, canExport = false }: Props) {
+  const [exportRange, setExportRange] = React.useState<DateRange | undefined>(undefined);
   const [exportOpen, setExportOpen] = React.useState(false);
   const exportHref = React.useMemo(() => {
     if (!exportRange?.from || !exportRange.to) return null;
     return `/api/audit-log/export?from=${toIsoDay(exportRange.from)}&to=${toIsoDay(exportRange.to)}`;
   }, [exportRange]);
-  const [sheetIdFilter, setSheetIdFilter] = React.useState<string | null>(
-    initialSheetIdFilter ?? null,
-  );
+  const [sheetIdFilter, setSheetIdFilter] = React.useState<string | null>(initialSheetIdFilter ?? null);
   const [dateRange, setDateRange] = React.useState<DateRange | undefined>(undefined);
   const [dateRangeOpen, setDateRangeOpen] = React.useState(false);
-  const [sorting, setSorting] = React.useState<SortingState>([{ id: 'at', desc: true }]);
+  const [sorting, setSorting] = React.useState<SortingState>([{ id: "at", desc: true }]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    initialActionFilter ? [{ id: 'action', value: [initialActionFilter] }] : [],
+    initialActionFilter ? [{ id: "action", value: [initialActionFilter] }] : [],
   );
-  const [globalFilter, setGlobalFilter] = React.useState('');
+  const [globalFilter, setGlobalFilter] = React.useState("");
 
   const filteredData = React.useMemo(() => {
     let data = rows;
@@ -125,12 +111,12 @@ export function AuditLogDataTable({
   const columns: ColumnDef<MergedRow>[] = React.useMemo(
     () => [
       {
-        accessorKey: 'at',
+        accessorKey: "at",
         header: ({ column }) => (
           <SortableHeader
             label="When"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => (
@@ -140,23 +126,23 @@ export function AuditLogDataTable({
         ),
       },
       {
-        accessorKey: 'actor',
+        accessorKey: "actor",
         header: ({ column }) => (
           <SortableHeader
             label="Who"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => <span className="text-xs">{row.original.actor}</span>,
       },
       {
-        accessorKey: 'action',
+        accessorKey: "action",
         header: ({ column }) => (
           <SortableHeader
             label="Action"
             sorted={column.getIsSorted()}
-            onToggle={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+            onToggle={() => column.toggleSorting(column.getIsSorted() === "asc")}
           />
         ),
         cell: ({ row }) => (
@@ -166,14 +152,12 @@ export function AuditLogDataTable({
         ),
         filterFn: (row, id, value) => {
           if (!value || (Array.isArray(value) && value.length === 0)) return true;
-          return Array.isArray(value)
-            ? value.includes(row.getValue(id))
-            : row.getValue(id) === value;
+          return Array.isArray(value) ? value.includes(row.getValue(id)) : row.getValue(id) === value;
         },
       },
       {
-        id: 'details',
-        header: 'Details',
+        id: "details",
+        header: "Details",
         cell: ({ row }) => (
           <div className="text-xs">
             <ActionDetails row={row.original} />
@@ -182,15 +166,14 @@ export function AuditLogDataTable({
         enableSorting: false,
       },
       {
-        id: 'open',
+        id: "open",
         header: () => <span className="text-right">Open</span>,
         cell: ({ row }) =>
           row.original.sheet_id ? (
             <div className="text-right">
               <Link
                 href={`/grading/${row.original.sheet_id}`}
-                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-              >
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
                 sheet
                 <ArrowUpRight className="h-3 w-3" />
               </Link>
@@ -226,12 +209,12 @@ export function AuditLogDataTable({
         r.actor,
         r.action,
         r.entity_type,
-        r.entity_id ?? '',
-        r.sheet_id ?? '',
+        r.entity_id ?? "",
+        r.sheet_id ?? "",
         new Date(r.at).toLocaleString(),
         JSON.stringify(r.context),
       ]
-        .join(' ')
+        .join(" ")
         .toLowerCase();
       return haystack.includes(needle);
     },
@@ -243,17 +226,16 @@ export function AuditLogDataTable({
     getFacetedUniqueValues: getFacetedUniqueValues(),
   });
 
-  const actionColumn = table.getColumn('action');
+  const actionColumn = table.getColumn("action");
   const actionValues = React.useMemo(() => {
     if (!actionColumn) return [] as string[];
     return Array.from(actionColumn.getFacetedUniqueValues().keys())
-      .filter((v): v is string => typeof v === 'string')
+      .filter((v): v is string => typeof v === "string")
       .sort();
   }, [actionColumn]);
   const selectedActions = (actionColumn?.getFilterValue() as string[] | undefined) ?? [];
 
-  const hasFilter =
-    globalFilter.length > 0 || selectedActions.length > 0 || !!sheetIdFilter || !!dateRange?.from;
+  const hasFilter = globalFilter.length > 0 || selectedActions.length > 0 || !!sheetIdFilter || !!dateRange?.from;
 
   return (
     <div className="space-y-4">
@@ -289,9 +271,7 @@ export function AuditLogDataTable({
                 Filter by action
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {actionValues.length === 0 && (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">No actions</div>
-              )}
+              {actionValues.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">No actions</div>}
               {actionValues.map((act) => {
                 const checked = selectedActions.includes(act);
                 return (
@@ -302,13 +282,10 @@ export function AuditLogDataTable({
                       const current = new Set(selectedActions);
                       if (next) current.add(act);
                       else current.delete(act);
-                      actionColumn?.setFilterValue(
-                        current.size === 0 ? undefined : Array.from(current),
-                      );
+                      actionColumn?.setFilterValue(current.size === 0 ? undefined : Array.from(current));
                     }}
                     onSelect={(e) => e.preventDefault()}
-                    className="font-mono text-xs"
-                  >
+                    className="font-mono text-xs">
                     {act}
                   </DropdownMenuCheckboxItem>
                 );
@@ -321,8 +298,7 @@ export function AuditLogDataTable({
                       variant="ghost"
                       size="sm"
                       className="w-full justify-center"
-                      onClick={() => actionColumn?.setFilterValue(undefined)}
-                    >
+                      onClick={() => actionColumn?.setFilterValue(undefined)}>
                       Clear
                     </Button>
                   </div>
@@ -337,16 +313,12 @@ export function AuditLogDataTable({
               <Button
                 variant="outline"
                 size="sm"
-                className={cn(
-                  'gap-2 font-normal',
-                  !dateRange?.from && 'text-muted-foreground',
-                )}
-              >
+                className={cn("gap-2 font-normal", !dateRange?.from && "text-muted-foreground")}>
                 <CalendarIcon className="h-3.5 w-3.5" />
                 {dateRange?.from ? (
                   <span className="font-mono text-[11px] tabular-nums">
                     {formatDay(dateRange.from)}
-                    {dateRange.to ? ` – ${formatDay(dateRange.to)}` : ''}
+                    {dateRange.to ? ` – ${formatDay(dateRange.to)}` : ""}
                   </span>
                 ) : (
                   <span>Any date</span>
@@ -367,15 +339,10 @@ export function AuditLogDataTable({
                   variant="ghost"
                   size="sm"
                   onClick={() => setDateRange(undefined)}
-                  disabled={!dateRange?.from}
-                >
+                  disabled={!dateRange?.from}>
                   Clear
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => setDateRangeOpen(false)}
-                >
+                <Button type="button" size="sm" onClick={() => setDateRangeOpen(false)}>
                   Done
                 </Button>
               </div>
@@ -386,15 +353,13 @@ export function AuditLogDataTable({
           {sheetIdFilter && (
             <Badge
               variant="outline"
-              className="h-9 gap-1.5 border-brand-indigo-soft/60 bg-accent px-2.5 font-mono text-[11px] text-brand-indigo-deep"
-            >
+              className="h-9 gap-1.5 border-brand-indigo-soft/60 bg-accent px-2.5 font-mono text-[11px] text-brand-indigo-deep">
               sheet {sheetIdFilter.slice(0, 8)}…
               <button
                 type="button"
                 onClick={() => setSheetIdFilter(null)}
                 aria-label="Clear sheet filter"
-                className="ml-0.5 inline-flex size-4 items-center justify-center rounded hover:bg-white"
-              >
+                className="ml-0.5 inline-flex size-4 items-center justify-center rounded hover:bg-white">
                 <X className="h-3 w-3" />
               </button>
             </Badge>
@@ -405,12 +370,11 @@ export function AuditLogDataTable({
               variant="ghost"
               size="sm"
               onClick={() => {
-                setGlobalFilter('');
+                setGlobalFilter("");
                 setColumnFilters([]);
                 setSheetIdFilter(null);
                 setDateRange(undefined);
-              }}
-            >
+              }}>
               <X className="h-3 w-3" />
               Clear all
             </Button>
@@ -418,77 +382,117 @@ export function AuditLogDataTable({
         </div>
 
         {canExport && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Popover open={exportOpen} onOpenChange={setExportOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={cn(
-                    'gap-2 font-normal',
-                    !exportRange?.from && 'text-muted-foreground',
-                  )}
-                >
-                  <CalendarIcon className="h-3.5 w-3.5" />
-                  {exportRange?.from ? (
-                    <span className="font-mono text-[11px] tabular-nums">
-                      {formatDay(exportRange.from)}
-                      {exportRange.to ? ` – ${formatDay(exportRange.to)}` : ''}
-                    </span>
-                  ) : (
-                    <span>Export range</span>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
-                <Calendar
-                  mode="range"
-                  selected={exportRange}
-                  onSelect={setExportRange}
-                  numberOfMonths={2}
-                  captionLayout="dropdown"
-                />
-                <div className="flex items-center justify-between border-t border-hairline p-2">
+          <Dialog
+            open={exportOpen}
+            onOpenChange={(v) => {
+              setExportOpen(v);
+              if (!v) setExportRange(undefined);
+            }}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Download className="h-3.5 w-3.5" />
+                Export CSV
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-lg!">
+              <DialogHeader>
+                <DialogTitle className="font-serif tracking-tight">Export date range</DialogTitle>
+                <DialogDescription className="text-[13px] leading-relaxed">
+                  All audit data within the selected date range will be exported as CSV.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-4">
+                {/* Date picker + download row */}
+                <div className="flex items-end gap-3">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "h-9 flex-1 justify-start gap-2 font-normal",
+                          !exportRange?.from && "text-muted-foreground",
+                        )}>
+                        <CalendarIcon className="size-3.5" />
+                        {exportRange?.from ? (
+                          <span className="font-mono text-[11px] tabular-nums">
+                            {formatDay(exportRange.from)}
+                            {exportRange.to ? ` – ${formatDay(exportRange.to)}` : ""}
+                          </span>
+                        ) : (
+                          <span className="text-sm">Pick a date range</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="range"
+                        selected={exportRange}
+                        onSelect={setExportRange}
+                        numberOfMonths={2}
+                        captionLayout="dropdown"
+                      />
+                      {exportRange?.from && (
+                        <div className="flex justify-end border-t border-border p-2">
+                          <Button type="button" variant="ghost" size="sm" onClick={() => setExportRange(undefined)}>
+                            Clear
+                          </Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+
                   <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setExportRange(undefined)}
-                    disabled={!exportRange?.from}
-                  >
-                    Clear
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => setExportOpen(false)}
-                  >
-                    Done
+                    asChild={!!exportHref}
+                    disabled={!exportHref}
+                    className="h-9 shrink-0 gap-2"
+                    onClick={() => {
+                      if (exportHref) setExportOpen(false);
+                    }}>
+                    {exportHref ? (
+                      <a href={exportHref} download>
+                        <Download className="size-3.5" />
+                        Download
+                      </a>
+                    ) : (
+                      <span className="flex gap-2">
+                        <Download className="size-3.5" />
+                        Download
+                      </span>
+                    )}
                   </Button>
                 </div>
-              </PopoverContent>
-            </Popover>
 
-            <Button
-              asChild={!!exportHref}
-              variant="default"
-              size="sm"
-              disabled={!exportHref}
-              className="gap-2"
-            >
-              {exportHref ? (
-                <a href={exportHref} download>
-                  <Download className="h-3.5 w-3.5" />
-                  Export CSV
-                </a>
-              ) : (
-                <span>
-                  <Download className="h-3.5 w-3.5" />
-                  Export CSV
-                </span>
-              )}
-            </Button>
-          </div>
+                {/* Validation hint */}
+                {!exportRange?.from && (
+                  <p className="text-[12px] text-destructive">
+                    Please select a start and end date to export.
+                  </p>
+                )}
+                {exportRange?.from && !exportRange.to && (
+                  <p className="text-[12px] text-destructive">
+                    Please select an end date to complete the range.
+                  </p>
+                )}
+
+                {/* Info alert */}
+                <div className="flex items-start gap-3 rounded-xl border border-brand-amber/40 bg-brand-amber-light/30 p-4">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand-amber/15 text-brand-amber">
+                    <History className="size-4" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-[13px] font-medium leading-tight text-foreground">
+                      Large exports may take a moment
+                    </p>
+                    <p className="text-[12px] leading-relaxed text-muted-foreground">
+                      The CSV includes every audit entry within the selected window. For wide ranges with heavy
+                      activity, the file can be several thousand rows.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         )}
       </div>
 
@@ -500,9 +504,7 @@ export function AuditLogDataTable({
               <TableRow key={hg.id} className="bg-muted/40 hover:bg-muted/40">
                 {hg.headers.map((h) => (
                   <TableHead key={h.id}>
-                    {h.isPlaceholder
-                      ? null
-                      : flexRender(h.column.columnDef.header, h.getContext())}
+                    {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
                   </TableHead>
                 ))}
               </TableRow>
@@ -513,18 +515,13 @@ export function AuditLogDataTable({
               table.getRowModel().rows.map((row) => (
                 <TableRow key={row.id}>
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
+                    <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
                   ))}
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-32 text-center text-sm text-muted-foreground"
-                >
+                <TableCell colSpan={columns.length} className="h-32 text-center text-sm text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
                     <History className="h-6 w-6 opacity-50" />
                     No audit entries match the current filters.
@@ -543,13 +540,10 @@ export function AuditLogDataTable({
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              Rows per page
-            </span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Rows per page</span>
             <Select
               value={`${table.getState().pagination.pageSize}`}
-              onValueChange={(v) => table.setPageSize(Number(v))}
-            >
+              onValueChange={(v) => table.setPageSize(Number(v))}>
               <SelectTrigger className="h-8 w-[70px]">
                 <SelectValue />
               </SelectTrigger>
@@ -564,8 +558,7 @@ export function AuditLogDataTable({
           </div>
 
           <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
-            Page {table.getState().pagination.pageIndex + 1} of{' '}
-            {Math.max(table.getPageCount(), 1)}
+            Page {table.getState().pagination.pageIndex + 1} of {Math.max(table.getPageCount(), 1)}
           </div>
 
           <div className="flex items-center gap-1">
@@ -574,8 +567,7 @@ export function AuditLogDataTable({
               size="icon"
               className="size-8"
               onClick={() => table.setPageIndex(0)}
-              disabled={!table.getCanPreviousPage()}
-            >
+              disabled={!table.getCanPreviousPage()}>
               <ChevronsLeft className="h-4 w-4" />
             </Button>
             <Button
@@ -583,8 +575,7 @@ export function AuditLogDataTable({
               size="icon"
               className="size-8"
               onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
+              disabled={!table.getCanPreviousPage()}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
@@ -592,8 +583,7 @@ export function AuditLogDataTable({
               size="icon"
               className="size-8"
               onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
+              disabled={!table.getCanNextPage()}>
               <ChevronRight className="h-4 w-4" />
             </Button>
             <Button
@@ -601,8 +591,7 @@ export function AuditLogDataTable({
               size="icon"
               className="size-8"
               onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-              disabled={!table.getCanNextPage()}
-            >
+              disabled={!table.getCanNextPage()}>
               <ChevronsRight className="h-4 w-4" />
             </Button>
           </div>
@@ -618,20 +607,18 @@ function SortableHeader({
   onToggle,
 }: {
   label: string;
-  sorted: false | 'asc' | 'desc';
+  sorted: false | "asc" | "desc";
   onToggle: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      className="group -ml-2 inline-flex h-8 items-center gap-1 rounded-md px-2 text-left font-medium transition-colors hover:bg-muted"
-    >
+      className="group -ml-2 inline-flex h-8 items-center gap-1 rounded-md px-2 text-left font-medium transition-colors hover:bg-muted">
       {label}
       <ArrowUpDown
         className={
-          'h-3 w-3 transition-opacity ' +
-          (sorted ? 'opacity-100 text-foreground' : 'opacity-40 group-hover:opacity-70')
+          "h-3 w-3 transition-opacity " + (sorted ? "opacity-100 text-foreground" : "opacity-40 group-hover:opacity-70")
         }
       />
     </button>
@@ -646,13 +633,13 @@ function ActionDetails({ row }: { row: MergedRow }) {
   };
 
   switch (row.action) {
-    case 'entry.update':
-    case 'totals.update': {
-      const field = str('field') ?? '—';
-      const oldV = str('old') ?? '∅';
-      const newV = str('new') ?? '∅';
-      const locked = ctx['was_locked'] === true;
-      const approval = str('approval_reference');
+    case "entry.update":
+    case "totals.update": {
+      const field = str("field") ?? "—";
+      const oldV = str("old") ?? "∅";
+      const newV = str("new") ?? "∅";
+      const locked = ctx["was_locked"] === true;
+      const approval = str("approval_reference");
       return (
         <div className="space-y-0.5">
           <div className="inline-flex flex-wrap items-center gap-1.5 font-mono">
@@ -662,144 +649,144 @@ function ActionDetails({ row }: { row: MergedRow }) {
             <span className="font-semibold">{newV}</span>
           </div>
           <div className="text-[10px] text-muted-foreground">
-            {locked ? 'post-lock' : 'pre-lock'}
-            {approval ? ` · approval: ${approval}` : ''}
+            {locked ? "post-lock" : "pre-lock"}
+            {approval ? ` · approval: ${approval}` : ""}
           </div>
         </div>
       );
     }
-    case 'sheet.create':
+    case "sheet.create":
       return (
         <span>
-          Created grading sheet{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            subject {str('subject_id')?.slice(0, 8)}…
-          </code>{' '}
-          for section{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('section_id')?.slice(0, 8)}…
-          </code>
-          {' · seeded '}
-          <span className="tabular-nums">{String(ctx['entries_seeded'] ?? 0)}</span>
-          {' entries'}
+          Created grading sheet{" "}
+          <code className="rounded bg-muted px-1 text-[10px]">subject {str("subject_id")?.slice(0, 8)}…</code> for
+          section <code className="rounded bg-muted px-1 text-[10px]">{str("section_id")?.slice(0, 8)}…</code>
+          {" · seeded "}
+          <span className="tabular-nums">{String(ctx["entries_seeded"] ?? 0)}</span>
+          {" entries"}
         </span>
       );
-    case 'sheet.lock':
+    case "sheet.lock":
       return <span>Locked grading sheet {row.sheet_id?.slice(0, 8)}…</span>;
-    case 'sheet.unlock':
+    case "sheet.unlock":
       return <span>Unlocked grading sheet {row.sheet_id?.slice(0, 8)}…</span>;
-    case 'student.sync': {
-      const added = ctx['added'] ?? 0;
-      const updated = ctx['updated'] ?? 0;
-      const withdrawn = ctx['withdrawn'] ?? 0;
-      const reactivated = ctx['reactivated'] ?? 0;
-      const errs = ctx['errors'] ?? 0;
+    case "student.sync": {
+      const added = ctx["added"] ?? 0;
+      const updated = ctx["updated"] ?? 0;
+      const withdrawn = ctx["withdrawn"] ?? 0;
+      const reactivated = ctx["reactivated"] ?? 0;
+      const errs = ctx["errors"] ?? 0;
       return (
         <span className="tabular-nums">
-          Synced admissions — added <b>{String(added)}</b>, updated <b>{String(updated)}</b>,
-          withdrew <b>{String(withdrawn)}</b>, reactivated <b>{String(reactivated)}</b>
+          Synced admissions — added <b>{String(added)}</b>, updated <b>{String(updated)}</b>, withdrew{" "}
+          <b>{String(withdrawn)}</b>, reactivated <b>{String(reactivated)}</b>
           {Number(errs) > 0 && <span className="text-destructive"> · {String(errs)} errors</span>}
         </span>
       );
     }
-    case 'student.add':
+    case "student.add":
       return (
         <span>
-          Manually added student{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">{str('student_number')}</code>
-          {' ('}
-          {str('first_name')} {str('last_name')}
-          {') as #'}
-          <span className="tabular-nums">{String(ctx['index_number'] ?? '')}</span>
+          Manually added student <code className="rounded bg-muted px-1 text-[10px]">{str("student_number")}</code>
+          {" ("}
+          {str("first_name")} {str("last_name")}
+          {") as #"}
+          <span className="tabular-nums">{String(ctx["index_number"] ?? "")}</span>
         </span>
       );
-    case 'assignment.create':
+    case "assignment.create":
       return (
         <span>
-          Created <b>{str('role')}</b> assignment for teacher{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('teacher_user_id')?.slice(0, 8)}…
-          </code>{' '}
-          on section{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('section_id')?.slice(0, 8)}…
-          </code>
-          {ctx['subject_id'] ? (
+          Created <b>{str("role")}</b> assignment for teacher{" "}
+          <code className="rounded bg-muted px-1 text-[10px]">{str("teacher_user_id")?.slice(0, 8)}…</code> on section{" "}
+          <code className="rounded bg-muted px-1 text-[10px]">{str("section_id")?.slice(0, 8)}…</code>
+          {ctx["subject_id"] ? (
             <>
-              {' / subject '}
-              <code className="rounded bg-muted px-1 text-[10px]">
-                {String(ctx['subject_id']).slice(0, 8)}…
-              </code>
+              {" / subject "}
+              <code className="rounded bg-muted px-1 text-[10px]">{String(ctx["subject_id"]).slice(0, 8)}…</code>
             </>
           ) : null}
         </span>
       );
-    case 'assignment.delete':
+    case "assignment.delete":
       return (
         <span>
-          Removed <b>{str('role')}</b> assignment (teacher{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('teacher_user_id')?.slice(0, 8)}…
-          </code>
-          )
+          Removed <b>{str("role")}</b> assignment (teacher{" "}
+          <code className="rounded bg-muted px-1 text-[10px]">{str("teacher_user_id")?.slice(0, 8)}…</code>)
         </span>
       );
-    case 'attendance.update': {
-      const after = ctx['after'] as Record<string, unknown> | undefined;
+    case "attendance.update": {
+      const after = ctx["after"] as Record<string, unknown> | undefined;
       return (
         <span className="tabular-nums">
-          Attendance updated for enrolment{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('section_student_id')?.slice(0, 8)}…
-          </code>
+          Attendance updated for enrolment{" "}
+          <code className="rounded bg-muted px-1 text-[10px]">{str("section_student_id")?.slice(0, 8)}…</code>
           {after && (
             <>
-              {' · school '}
-              <b>{String(after['school_days'] ?? '—')}</b>
-              {' · present '}
-              <b>{String(after['days_present'] ?? '—')}</b>
-              {' · late '}
-              <b>{String(after['days_late'] ?? '—')}</b>
+              {" · school "}
+              <b>{String(after["school_days"] ?? "—")}</b>
+              {" · present "}
+              <b>{String(after["days_present"] ?? "—")}</b>
+              {" · late "}
+              <b>{String(after["days_late"] ?? "—")}</b>
             </>
           )}
         </span>
       );
     }
-    case 'comment.update':
+    case "comment.update":
       return (
         <span>
-          Updated adviser comment for student{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('student_id')?.slice(0, 8)}…
-          </code>
+          Updated adviser comment for student{" "}
+          <code className="rounded bg-muted px-1 text-[10px]">{str("student_id")?.slice(0, 8)}…</code>
         </span>
       );
-    case 'publication.create':
+    case "publication.create":
       return (
         <span>
-          Published report cards for section{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('section_id')?.slice(0, 8)}…
-          </code>
-          {' · term '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('term_id')?.slice(0, 8)}…
-          </code>
-          {' · window '}
+          Published report cards for section{" "}
+          <code className="rounded bg-muted px-1 text-[10px]">{str("section_id")?.slice(0, 8)}…</code>
+          {" · term "}
+          <code className="rounded bg-muted px-1 text-[10px]">{str("term_id")?.slice(0, 8)}…</code>
+          {" · window "}
           <span className="inline-flex items-center gap-1.5 tabular-nums">
-            {str('publish_from')?.slice(0, 10)}
+            {str("publish_from")?.slice(0, 10)}
             <ArrowRight className="size-3 text-muted-foreground" />
-            {str('publish_until')?.slice(0, 10)}
+            {str("publish_until")?.slice(0, 10)}
           </span>
         </span>
       );
-    case 'publication.delete':
+    case "publication.delete":
       return (
         <span>
-          Revoked report card publication for section{' '}
-          <code className="rounded bg-muted px-1 text-[10px]">
-            {str('section_id')?.slice(0, 8)}…
-          </code>
+          Revoked report card publication for section{" "}
+          <code className="rounded bg-muted px-1 text-[10px]">{str("section_id")?.slice(0, 8)}…</code>
+        </span>
+      );
+    case "pfile.upload": {
+      const label = str("label") ?? str("slotKey") ?? "document";
+      const merged = ctx["merged"] === true;
+      const count = ctx["fileCount"] ? String(ctx["fileCount"]) : "1";
+      return (
+        <span>
+          Uploaded <b>{label}</b> for student <code className="rounded bg-muted px-1 text-[10px]">{row.entity_id}</code>
+          {merged && <span className="text-muted-foreground"> · merged {count} PDFs</span>}
+          {str("expiryDate") && <span className="text-muted-foreground"> · expires {str("expiryDate")}</span>}
+        </span>
+      );
+    }
+    case "pfile.approve":
+      return (
+        <span>
+          Approved <b>{str("label") ?? str("slotKey") ?? "document"}</b> for student{" "}
+          <code className="rounded bg-muted px-1 text-[10px]">{row.entity_id}</code>
+        </span>
+      );
+    case "pfile.reject":
+      return (
+        <span>
+          Rejected <b>{str("label") ?? str("slotKey") ?? "document"}</b> for student{" "}
+          <code className="rounded bg-muted px-1 text-[10px]">{row.entity_id}</code>
         </span>
       );
     default:
@@ -820,10 +807,10 @@ function endOfDay(d: Date): Date {
 }
 
 function toIsoDay(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
+  const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function formatDay(d: Date): string {
-  return d.toLocaleDateString('en-SG', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString("en-SG", { month: "short", day: "numeric" });
 }

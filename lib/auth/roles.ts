@@ -1,8 +1,8 @@
 import type { User } from '@supabase/supabase-js';
 
-export type Role = 'teacher' | 'registrar' | 'admin' | 'superadmin';
+export type Role = 'teacher' | 'registrar' | 'admin' | 'superadmin' | 'p-file';
 
-export const ROLES: Role[] = ['teacher', 'registrar', 'admin', 'superadmin'];
+export const ROLES: Role[] = ['teacher', 'registrar', 'admin', 'superadmin', 'p-file'];
 
 export type NavItem = { href: string; label: string; badgeKey?: SidebarBadgeKey };
 export type NavSection = { label?: string; items: NavItem[] };
@@ -69,6 +69,9 @@ export const NAV_BY_ROLE: Record<Role, NavSection[]> = {
       ],
     },
   ],
+  'p-file': [
+    { items: [{ href: '/p-files', label: 'Dashboard' }] },
+  ],
   superadmin: [
     { items: [{ href: '/', label: 'Dashboard' }] },
     {
@@ -105,6 +108,7 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   { prefix: '/admin',        allowed: ['registrar', 'admin', 'superadmin'] },
   { prefix: '/report-cards', allowed: ['registrar', 'admin', 'superadmin'] },
   { prefix: '/grading',      allowed: ['teacher', 'registrar', 'admin', 'superadmin'] },
+  { prefix: '/p-files',      allowed: ['p-file', 'superadmin'] },
 ];
 
 export function getUserRole(user: User | null | undefined): Role | null {

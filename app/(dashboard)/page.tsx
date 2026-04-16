@@ -381,13 +381,11 @@ async function loadStatsUncached(academicYearId: string): Promise<Stats> {
   };
 }
 
-function loadStats(academicYearId: string): Promise<Stats> {
-  return unstable_cache(
-    () => loadStatsUncached(academicYearId),
-    ["dashboard-stats", academicYearId],
-    { revalidate: 60, tags: ["dashboard-stats"] },
-  )();
-}
+const loadStats = unstable_cache(
+  loadStatsUncached,
+  ["dashboard-stats"],
+  { revalidate: 60, tags: ["dashboard-stats"] },
+);
 
 function formatNumber(n: number): string {
   return n.toLocaleString("en-SG");

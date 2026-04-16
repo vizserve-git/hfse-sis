@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, Printer } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
+import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getStudentsByParentEmail } from '@/lib/supabase/admissions';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
@@ -15,11 +15,8 @@ export default async function ParentReportCardPage({
   params: Promise<{ studentId: string }>;
 }) {
   const { studentId } = await params;
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const email = user?.email ?? '';
+  const sessionUser = await getSessionUser();
+  const email = sessionUser?.email ?? '';
 
   // 1) Verify parent→student linkage via admissions, for the current AY.
   const service = createServiceClient();

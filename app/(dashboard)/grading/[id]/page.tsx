@@ -10,8 +10,8 @@ import {
   Scale,
   Users,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
-import { getUserRole, type Role } from '@/lib/auth/roles';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
+import type { Role } from '@/lib/auth/roles';
 import {
   loadAssignmentsForUser,
   isSubjectTeacher,
@@ -80,12 +80,12 @@ export default async function GradingSheetPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const sessionUser = await getSessionUser();
+  const role: Role | null = sessionUser?.role ?? null;
+  const canManage = role === 'registrar' || role === 'admin' || role === 'superadmin';
   const supabase = await createClient();
 
-  const { data: userRes } = await supabase.auth.getUser();
-  const role: Role | null = getUserRole(userRes.user);
-  const canManage = role === 'registrar' || role === 'admin' || role === 'superadmin';
-
+  // Fetch sheet first (needed for notFound gate), then parallelize the rest
   const { data: sheet } = await supabase
     .from('grading_sheets')
     .select(
@@ -102,28 +102,30 @@ export default async function GradingSheetPage({
   const readOnly = sheet.is_locked && !canManage;
   const requireApproval = sheet.is_locked && canManage;
 
-  const { data: openRequestsRaw } = await supabase
-    .from('grade_change_requests')
-    .select('id, status')
-    .eq('grading_sheet_id', id)
-    .in('status', ['pending', 'approved']);
+  // Parallel fetch — change requests + entries are independent
+  const [{ data: openRequestsRaw }, { data: entriesRaw }] = await Promise.all([
+    supabase
+      .from('grade_change_requests')
+      .select('id, status')
+      .eq('grading_sheet_id', id)
+      .in('status', ['pending', 'approved']),
+    supabase
+      .from('grade_entries')
+      .select(
+        `id, ww_scores, pt_scores, qa_score,
+         ww_ps, pt_ps, qa_ps, initial_grade, quarterly_grade,
+         letter_grade, is_na,
+         section_student:section_students(id, index_number, enrollment_status,
+           student:students(student_number, last_name, first_name, middle_name))`,
+      )
+      .eq('grading_sheet_id', id),
+  ]);
   const openRequests = (openRequestsRaw ?? []) as Array<{
     id: string;
     status: 'pending' | 'approved';
   }>;
   const pendingCount = openRequests.filter((r) => r.status === 'pending').length;
   const approvedCount = openRequests.filter((r) => r.status === 'approved').length;
-
-  const { data: entriesRaw } = await supabase
-    .from('grade_entries')
-    .select(
-      `id, ww_scores, pt_scores, qa_score,
-       ww_ps, pt_ps, qa_ps, initial_grade, quarterly_grade,
-       letter_grade, is_na,
-       section_student:section_students(id, index_number, enrollment_status,
-         student:students(student_number, last_name, first_name, middle_name))`,
-    )
-    .eq('grading_sheet_id', id);
 
   const entries = ((entriesRaw ?? []) as unknown as EntryRow[])
     .slice()
@@ -143,8 +145,8 @@ export default async function GradingSheetPage({
   // Teacher assignment gate — only the subject-teacher for this section/subject
   // may file a change request on the locked sheet.
   let isAssignedTeacher = false;
-  if (role === 'teacher' && userRes.user && section?.id && subject?.id) {
-    const assignments = await loadAssignmentsForUser(supabase, userRes.user.id);
+  if (role === 'teacher' && sessionUser && section?.id && subject?.id) {
+    const assignments = await loadAssignmentsForUser(supabase, sessionUser.id);
     isAssignedTeacher = isSubjectTeacher(assignments, section.id, subject.id);
   }
 

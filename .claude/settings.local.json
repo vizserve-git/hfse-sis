@@ -56,7 +56,8 @@
       "Bash(node -e \"console.log\\(require\\('./node_modules/tw-animate-css/package.json'\\).peerDependencies || 'no peers'\\)\")",
       "Bash(awk -F/ '{dir=$\\(NF-1\\); sub\\(/\\\\/[^/]+$/, \"\"\\); print dir, \\(NF%1\\), $0}')",
       "Bash(rm -rf .next)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(node -e \"const m = require\\('next/cache'\\); console.log\\(m.revalidateTag?.toString\\(\\)?.slice\\(0,200\\)\\)\")"
     ]
   },
   "enabledMcpjsonServers": [

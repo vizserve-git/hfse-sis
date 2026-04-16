@@ -2,8 +2,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 
 import { PageShell } from '@/components/ui/page-shell';
-import { createClient } from '@/lib/supabase/server';
-import { getUserRole } from '@/lib/auth/roles';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import {
   getApplicationsByLevel,
@@ -42,9 +41,9 @@ type PageProps = {
 
 export default async function AdmissionsDashboardPage({ searchParams }: PageProps) {
   const sp = await searchParams;
+  const sessionUser = await getSessionUser();
+  const role = sessionUser?.role ?? null;
   const supabase = await createClient();
-  const { data: userData } = await supabase.auth.getUser();
-  const role = getUserRole(userData.user);
 
   const currentAy = await requireCurrentAyCode(supabase);
   const selectedAy = sp.ay && /^AY\d{4}$/.test(sp.ay) ? sp.ay : currentAy;

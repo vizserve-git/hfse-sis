@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FilePlus2,
   FileText,
+  FolderOpen,
   GraduationCap,
   History,
   LogOut,
@@ -45,6 +46,7 @@ const ICON_BY_HREF: Record<string, LucideIcon> = {
   "/report-cards": FileText,
   "/admin/audit-log": History,
   "/admin": GraduationCap,
+  "/p-files": FolderOpen,
 };
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -52,6 +54,7 @@ const ROLE_LABEL: Record<Role, string> = {
   registrar: "Registrar",
   admin: "Admin",
   superadmin: "Superadmin",
+  "p-file": "P-File Officer",
 };
 
 export function AppSidebar({

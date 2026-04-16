@@ -1,15 +1,11 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageShell } from "@/components/ui/page-shell";
-import { getUserRole } from "@/lib/auth/roles";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser } from "@/lib/supabase/server";
 import { ChangePasswordForm } from "./change-password-form";
 
 export default async function AccountPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const role = getUserRole(user);
+  const sessionUser = await getSessionUser();
+  const role = sessionUser?.role ?? null;
 
   return (
     <PageShell className="max-w-2xl">
@@ -38,7 +34,7 @@ export default async function AccountPage() {
           <dl className="divide-y divide-border">
             <div className="flex items-center justify-between px-6 py-4">
               <dt className="text-sm text-muted-foreground">Email</dt>
-              <dd className="text-sm font-medium text-foreground">{user?.email ?? "—"}</dd>
+              <dd className="text-sm font-medium text-foreground">{sessionUser?.email ?? "—"}</dd>
             </div>
             <div className="flex items-center justify-between px-6 py-4">
               <dt className="text-sm text-muted-foreground">Role</dt>

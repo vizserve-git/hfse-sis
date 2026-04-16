@@ -21,6 +21,7 @@ A web app replacing manual Google Sheets grading at HFSE International School, S
 | `docs/context/09-design-system.md`          | Any UI work — tokens, components, what NOT to build      |
 | `docs/context/10-parent-portal.md`          | Parent portal handoff, admissions DDL, parent flow       |
 | `docs/context/11-performance-patterns.md`   | Any new page — auth/cache/parallel/loading checklist     |
+| `docs/context/12-p-files-module.md`         | P-Files module — document types, statuses, architecture  |
 
 ## Hard rules — never violate
 
@@ -63,6 +64,7 @@ All UI must conform to `docs/context/09-design-system.md`. Colors, fonts, radius
 - **`react-hook-form` + `zod` + `@hookform/resolvers`** + shadcn `Form` primitive (`components/ui/form.tsx`) — canonical stack for any submit-based form. Schemas live in `lib/schemas/`.
 - **`sonner`** via shadcn `components/ui/sonner.tsx` — canonical toast system. `<Toaster />` mounted once in `app/layout.tsx` (light theme, top-right, richColors). All action feedback flows through `toast.success` / `toast.error`, not inline `<Alert>` blocks.
 - **`@tanstack/react-table`** + **`recharts`** — canonical data-table and charting engines for dashboards
+- **`pdf-merger-js`** — server-only PDF merger for P-Files upload pipeline. When staff select multiple PDFs in the upload dialog, the API route merges them into a single `.pdf` before writing to Storage. Marked in `next.config.ts::serverExternalPackages` so the `pdf-lib` transitive doesn't trip the bundler.
 - **Vercel** — deployment target (Root Directory: repo root / blank)
 - **PDF generation deferred** — browser Print / Save as PDF covers current volume. If automation is needed later, prefer Puppeteer-in-Next.js over the original Python/WeasyPrint plan.
 
@@ -94,7 +96,8 @@ hfse-markbook/
 │   ├── (parent)/parent/      ← parent portal SSO landing + report card view
 │   │   ├── enter/            ← token-fragment handoff from enrol.hfse.edu.sg
 │   │   └── report-cards/     ← parent-scoped report card view
-│   └── api/                  ← all routes (one folder per resource; incl. api/admissions/export)
+│   ├── (p-files)/p-files/    ← P-Files module: dashboard, [enroleeNumber] student detail, audit-log (module-scoped)
+│   └── api/                  ← all routes (one folder per resource; incl. api/admissions/export, api/p-files/[enroleeNumber]/{upload,status})
 ├── lib/
 │   ├── supabase/             ← client / server / service / middleware / admissions helpers
 │   ├── auth/                 ← roles, require-role, teacher-assignments
@@ -103,6 +106,7 @@ hfse-markbook/
 │   ├── notifications/        ← email-parents-publication.ts + email-change-request.ts (Resend)
 │   ├── report-card/          ← build-report-card.ts (shared staff+parent fetch)
 │   ├── admissions/           ← dashboard.ts — cached read-only query helpers for /admin/admissions
+│   ├── p-files/              ← document-config.ts + queries.ts + mutations.ts — P-Files module data layer
 │   ├── change-requests/      ← sidebar-counts.ts — per-role pending-count badge query
 │   ├── schemas/              ← zod schemas shared by RHF forms (and by API routes once server validation is adopted)
 │   ├── academic-year.ts      ← getCurrentAcademicYear / requireCurrentAyCode
@@ -113,7 +117,9 @@ hfse-markbook/
 ├── components/admissions/    ← pipeline-cards, funnel/by-level/assessment/referral charts, outdated table, ay-switcher
 ├── components/report-card/   ← report-card-document (shared render, print CSS)
 ├── components/ui/            ← shadcn primitives (button/card/table/field/form/select/tabs/dropdown-menu/sheet/dialog/alert-dialog/sonner/popover/calendar/...) + DateTimePicker wrapper + PageShell layout wrapper
-├── components/{app,parent}-sidebar.tsx
+├── components/p-files/        ← summary-cards, completeness-table, document-card, upload-dialog (drag+drop, multi-PDF merge)
+├── components/{app,parent,p-files}-sidebar.tsx
+├── components/module-switcher.tsx ← superadmin header dropdown: Markbook ↔ P-Files
 ├── supabase/
 │   ├── migrations/           ← 001_initial_schema → 010_realtime_change_requests
 │   └── seed.sql              ← AY2026 + levels + subjects + sections + terms + configs
@@ -139,7 +145,7 @@ Original plan had separate `ADMISSIONS_SUPABASE_*` vars; dropped because admissi
 ## Key decisions
 
 1. **Single Supabase project** for grading + admissions tables.
-2. **Roles in `app_metadata.role`** (`teacher | registrar | admin | superadmin`). No `user_roles` table.
+2. **Roles in `app_metadata.role`** (`teacher | registrar | admin | superadmin | p-file`). No `user_roles` table. `p-file` is module-scoped to `/p-files/*`; `superadmin` sees both modules via the module switcher.
 3. **Teacher assignments** in `teacher_assignments` table: `(user × section × subject × role)` where role is `form_adviser` (one per section) or `subject_teacher` (one per section × subject). Gates `/api/grading-sheets` list and `PUT /api/sections/[id]/comments`.
 4. **Weights per `(subject × level × AY)`** in `subject_configs`. Primary 40/40/20, Secondary 30/50/20. Never hardcoded.
 5. **Max 5 WW + 5 PT slots per sheet** (`subject_configs.ww_max_slots / pt_max_slots`).
@@ -147,7 +153,7 @@ Original plan had separate `ADMISSIONS_SUPABASE_*` vars; dropped because admissi
 7. **Overall annual grade** = `T1×0.20 + T2×0.20 + T3×0.20 + T4×0.40`, rounded 2dp. See `lib/compute/annual.ts`.
 8. **PDF generation deferred** — browser print covers current volume.
 9. **RLS tightened** via `supabase/migrations/004_tighten_rls.sql` (JWT role gate + deny-writes on authenticated role + grade_audit_log registrar-only) and `005_rls_teacher_scoping.sql` (per-teacher row scoping on grade/student tables). Apply both before production UAT.
-10. **Comprehensive audit log** in `006_audit_log.sql` (`public.audit_log` — generic `{actor, action, entity_type, entity_id, context}` rows) written from every mutating API route via `lib/audit/log-action.ts`. Historical `grade_audit_log` kept intact; the `/admin/audit-log` page unions both. Hard Rule #6 still applies.
+10. **Comprehensive audit log** in `006_audit_log.sql` (`public.audit_log` — generic `{actor, action, entity_type, entity_id, context}` rows) written from every mutating API route via `lib/audit/log-action.ts`. Historical `grade_audit_log` kept intact. **Audit log is split by module**: `/admin/audit-log` excludes rows with `action LIKE 'pfile.%'`; `/p-files/audit-log` includes *only* those rows. Both pages render via the same `AuditLogDataTable` component. Hard Rule #6 still applies.
 11. **Report card publication windows** in `007_report_card_publications.sql` — per-section, per-term `(publish_from, publish_until)` gates the parent view. Registrar publishes via `/report-cards` list page. See `docs/context/10-parent-portal.md`.
 12. **Parents are null-role Supabase Auth users** in the shared project. `getUserRole()` returns `null` for them; `proxy.ts` routes null-role users to `/parent/*` only. Parent↔student linkage lives in admissions `ay{YY}_enrolment_applications` (`motherEmail`/`fatherEmail`) — resolved via `getStudentsByParentEmail()` in `lib/supabase/admissions.ts`.
 13. **Parent portal SSO handoff** via URL fragment at `/parent/enter`. Parents sign in once at `https://enrol.hfse.edu.sg`, click "View report card" there, arrive at the markbook with `#access_token=&refresh_token=&next=` in the URL; client-side `supabase.auth.setSession()` establishes the markbook session without a second login. See `docs/context/10-parent-portal.md` for the integration snippet.
@@ -166,7 +172,11 @@ Original plan had separate `ADMISSIONS_SUPABASE_*` vars; dropped because admissi
 27. **Report card has two templates: interim (T1–T3) and final (T4).** `ReportCardDocument` takes a `viewingTermNumber` prop. Interim shows terms 1–3 side by side with no Final Grade. Final shows all four terms + Final Grade column (`computeAnnualGrade`) + General Average footer (`computeGeneralAverage`) + cumulative Attendance % (`computeAttendancePercentage`). Non-examinable subjects show "Passed" in the Final Grade column. Staff view at `/report-cards/[id]?term=N` has a two-tab switcher (Interim / Final). Parent view derives the template from active publication windows. All three compute functions live in `lib/compute/annual.ts` with self-tests.
 28. **Pre-publish readiness checklist** — `publish-window-panel.tsx` calls `GET /api/sections/[id]/publish-readiness?term_id=` before publishing. Checks: (a) all grading sheets locked, (b) adviser comments written, (c) attendance records entered, (d) T4-only: all four terms locked, (e) T4-only: all quarterly grades present for Final Grade. Shows a soft-warning AlertDialog with per-item pass/fail; registrar can proceed with "Publish anyway". Never hard-blocks.
 29. **Dev email redirect** — in non-production (`NODE_ENV !== 'production'`), all Resend emails are redirected to a static dev address. Both `email-parents-publication.ts` and `email-change-request.ts` override the `to` field.
-30. **Dates: ISO 8601 UTC in storage and transit, display-layer local.** Timestamps flow as UTC ISO strings end-to-end (Postgres `timestamptz`, API JSON, server component props). Display conversion to Singapore local happens at render time via `new Date(iso).toLocaleString('en-SG')`. No `dayjs` / `date-fns` / `moment` is imported anywhere — don't add one. Publication windows (`publish_from` / `publish_until`) and audit timestamps follow the same rule. When adding new timestamp fields, keep them UTC in the DB and let the UI format them.
+31. **P-Files module is a separate route group `/(p-files)/`** sharing the same app. New `p-file` role in `app_metadata.role` + superadmin access. Reads `ay{YY}_enrolment_documents` (already populated by parent uploads via admissions portal). Dashboard at `/p-files` with per-student completeness matrix, student detail at `/p-files/[enroleeNumber]` with approve/reject + upload-on-behalf, module-scoped audit log at `/p-files/audit-log`. Upload-on-behalf uses the `parent-portal` Storage bucket matching the admissions portal convention; multiple PDFs merge into one via `pdf-merger-js`; staff uploads auto-status to `'Valid'` (no review queue). Documents grouped into non-expiring (ID picture, birth cert, educ cert, medical), student-expiring (passport, pass), and parent/guardian (conditional on parent email). Expiring slots collect structured metadata (passport number *or* pass type + expiry date) and write both `ay{YY}_enrolment_documents` and `ay{YY}_enrolment_applications` in one request. See `docs/context/12-p-files-module.md`.
+32. **Dates: ISO 8601 UTC in storage and transit, display-layer local.** Timestamps flow as UTC ISO strings end-to-end (Postgres `timestamptz`, API JSON, server component props). Display conversion to Singapore local happens at render time via `new Date(iso).toLocaleString('en-SG')`. No `dayjs` / `date-fns` / `moment` is imported anywhere — don't add one (`date-fns` sits in `package.json` as a transitive of `react-day-picker` only). Publication windows (`publish_from` / `publish_until`) and audit timestamps follow the same rule. When adding new timestamp fields, keep them UTC in the DB and let the UI format them.
+33. **Module switcher** — `components/module-switcher.tsx` is a shadcn `Select` rendered in both dashboard layouts' sticky header (`app/(dashboard)/layout.tsx` + `app/(p-files)/layout.tsx`). When `canSwitch` is false (non-superadmin) it renders a plain icon + label lockup. When the current user is `superadmin`, it renders a select trigger with a stacked up/down chevron (Vercel-style) that `router.push`es between `/` and `/p-files`. Non-superadmin `p-file` users stay locked to P-Files.
+34. **P-Files upload pipeline (dual-table + merge).** `POST /api/p-files/[enroleeNumber]/upload` accepts multipart form data: one or more `file` entries, a `slotKey`, and — for expiring slots — either `passportNumber` (for passport slots) or `passType` (for pass slots), plus `expiryDate`. Behavior: 1 file → upload as-is in original extension; 2+ files → validate all are PDFs, merge via `pdf-merger-js`, store as `.pdf`. Size limits: 10 MB per file, 30 MB per request. Writes are split across two tables: the file URL + `Status='Valid'` + expiry land on `ay{YY}_enrolment_documents`; passport number / pass type + expiry are also mirrored to `ay{YY}_enrolment_applications` so the enrolment record stays authoritative. Slot → column map lives in `lib/p-files/document-config.ts::SlotMeta`. Audit action: `pfile.upload`.
+35. **Server-component auth uses `getSessionUser()`**, not `getUser()`. `lib/supabase/server.ts` exports `getSessionUser()` which wraps `supabase.auth.getClaims()` (local JWT verification against cached JWKS — no network round-trip) and returns `{ id, email, role: Role | null }`. All three layouts and every role-gated page use it. API routes still use `requireRole()` (which calls `getUser()` internally); the nav hot path is what matters for latency. Full rationale + migration list in `docs/context/11-performance-patterns.md` §1.
 
 ## Workflow
 

@@ -6,8 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageShell } from "@/components/ui/page-shell";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getUserRole } from "@/lib/auth/roles";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionUser } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { MyRequestsCancelButton } from "./my-requests-cancel-button";
 
@@ -75,10 +74,9 @@ function fieldLabel(field: string, slot: number | null): string {
 }
 
 export default async function MyRequestsPage() {
-  const supabase = await createClient();
-  const { data: userRes } = await supabase.auth.getUser();
-  if (!userRes.user) redirect("/login");
-  const role = getUserRole(userRes.user);
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) redirect("/login");
+  const { role, id: userId } = sessionUser;
   if (!role) redirect("/parent");
 
   // Teachers see only their own; anyone else can still view this page as a
@@ -92,7 +90,7 @@ export default async function MyRequestsPage() {
        status, requested_at, reviewed_at, reviewed_by_email, decision_note,
        applied_at`,
     )
-    .eq("requested_by", userRes.user.id)
+    .eq("requested_by", userId)
     .order("requested_at", { ascending: false });
 
   const rows = (rawRows ?? []) as RequestRow[];

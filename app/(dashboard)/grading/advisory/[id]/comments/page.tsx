@@ -7,8 +7,7 @@ import {
   PencilLine,
   ShieldAlert,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
-import { getUserRole } from '@/lib/auth/roles';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -34,19 +33,17 @@ export default async function AdvisoryCommentsPage({
 }) {
   const { id } = await params;
   const q = await searchParams;
-  const supabase = await createClient();
-
-  const { data: userRes } = await supabase.auth.getUser();
-  const user = userRes.user;
-  if (!user) redirect('/login');
-  const role = getUserRole(user);
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) redirect('/login');
+  const { role, id: userId } = sessionUser;
   const isManager = role === 'registrar' || role === 'admin' || role === 'superadmin';
+  const supabase = await createClient();
 
   if (!isManager) {
     const { data: assignment } = await supabase
       .from('teacher_assignments')
       .select('id')
-      .eq('teacher_user_id', user.id)
+      .eq('teacher_user_id', userId)
       .eq('section_id', id)
       .eq('role', 'form_adviser')
       .maybeSingle();

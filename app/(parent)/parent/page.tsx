@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { ArrowUpRight, BookOpen, CheckCircle2, Clock, GraduationCap, Lock } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
+import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getStudentsByParentEmail } from '@/lib/supabase/admissions';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
@@ -30,12 +30,9 @@ type ChildCard = {
 };
 
 export default async function ParentHomePage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const sessionUser = await getSessionUser();
   // Layout already verified user + null role; trust it here.
-  const email = user?.email ?? '';
+  const email = sessionUser?.email ?? '';
 
   // 1) Resolve the current academic year (dynamic — whatever row has
   //    is_current=true in public.academic_years). Admissions tables are

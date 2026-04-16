@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { AlertTriangle, ArrowLeft, ListChecks, Lock, Users } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
-import { getUserRole } from '@/lib/auth/roles';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import {
   Card,
   CardAction,
@@ -19,22 +18,33 @@ export default async function AuditLogPage({
   searchParams: Promise<{ sheet_id?: string; action?: string }>;
 }) {
   const params = await searchParams;
+  const sessionUser = await getSessionUser();
+  const canExport = sessionUser?.role === 'superadmin';
   const supabase = await createClient();
-  const { data: userData } = await supabase.auth.getUser();
-  const canExport = getUserRole(userData.user) === 'superadmin';
 
-  // Fetch both sources in parallel, then merge.
+  // Push filters to DB when present to avoid fetching 1000 rows for a targeted view
+  let newQ = supabase
+    .from('audit_log')
+    .select('id, actor_email, action, entity_type, entity_id, context, created_at')
+    .not('action', 'like', 'pfile.%');
+  let legacyQ = supabase
+    .from('grade_audit_log')
+    .select('*');
+
+  if (params.action) {
+    newQ = newQ.eq('action', params.action);
+    // Legacy rows don't have an 'action' column — they're always entry/totals updates
+    const isLegacyAction = params.action === 'entry.update' || params.action === 'totals.update';
+    if (!isLegacyAction) legacyQ = legacyQ.limit(0); // skip legacy if filtering to a non-legacy action
+  }
+  if (params.sheet_id) {
+    newQ = newQ.contains('context', { grading_sheet_id: params.sheet_id });
+    legacyQ = legacyQ.eq('grading_sheet_id', params.sheet_id);
+  }
+
   const [newRes, legacyRes] = await Promise.all([
-    supabase
-      .from('audit_log')
-      .select('id, actor_email, action, entity_type, entity_id, context, created_at')
-      .order('created_at', { ascending: false })
-      .limit(500),
-    supabase
-      .from('grade_audit_log')
-      .select('*')
-      .order('changed_at', { ascending: false })
-      .limit(500),
+    newQ.order('created_at', { ascending: false }).limit(500),
+    legacyQ.order('changed_at', { ascending: false }).limit(500),
   ]);
 
   const errors = [newRes.error?.message, legacyRes.error?.message].filter(Boolean);
@@ -60,59 +70,72 @@ export default async function AuditLogPage({
     changed_at: string;
   };
 
-  const merged: MergedRow[] = [
-    ...((newRes.data ?? []) as NewRow[]).map(
-      (r): MergedRow => ({
-        id: `new-${r.id}`,
-        at: r.created_at,
-        actor: r.actor_email,
-        action: r.action,
-        entity_type: r.entity_type,
-        entity_id: r.entity_id,
-        context: r.context ?? {},
-        sheet_id:
-          (r.context as Record<string, unknown> | null)?.['grading_sheet_id'] as
-            | string
-            | null
-            | undefined ??
-          (r.entity_type === 'grading_sheet' ? r.entity_id : null),
-        source: 'audit_log',
-      }),
-    ),
-    ...((legacyRes.data ?? []) as LegacyRow[]).map(
-      (r): MergedRow => ({
-        id: `legacy-${r.id}`,
-        at: r.changed_at,
-        actor: r.changed_by,
-        action:
-          r.field_changed.startsWith('ww_totals') ||
-          r.field_changed.startsWith('pt_totals') ||
-          r.field_changed === 'qa_total'
-            ? 'totals.update'
-            : 'entry.update',
-        entity_type:
-          r.field_changed.startsWith('ww_totals') ||
-          r.field_changed.startsWith('pt_totals') ||
-          r.field_changed === 'qa_total'
-            ? 'grading_sheet'
-            : 'grade_entry',
-        entity_id: r.grade_entry_id,
-        context: {
-          field: r.field_changed,
-          old: r.old_value,
-          new: r.new_value,
-          was_locked: true,
-          approval_reference: r.approval_reference,
-          grading_sheet_id: r.grading_sheet_id,
-          legacy: true,
-        },
-        sheet_id: r.grading_sheet_id,
-        source: 'grade_audit_log',
-      }),
-    ),
-  ]
-    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-    .slice(0, 500);
+  // Map both sources to MergedRow — both arrive in descending order from DB
+  const newRows: MergedRow[] = ((newRes.data ?? []) as NewRow[]).map(
+    (r): MergedRow => ({
+      id: `new-${r.id}`,
+      at: r.created_at,
+      actor: r.actor_email,
+      action: r.action,
+      entity_type: r.entity_type,
+      entity_id: r.entity_id,
+      context: r.context ?? {},
+      sheet_id:
+        (r.context as Record<string, unknown> | null)?.['grading_sheet_id'] as
+          | string
+          | null
+          | undefined ??
+        (r.entity_type === 'grading_sheet' ? r.entity_id : null),
+      source: 'audit_log',
+    }),
+  );
+  const legacyRows: MergedRow[] = ((legacyRes.data ?? []) as LegacyRow[]).map(
+    (r): MergedRow => ({
+      id: `legacy-${r.id}`,
+      at: r.changed_at,
+      actor: r.changed_by,
+      action:
+        r.field_changed.startsWith('ww_totals') ||
+        r.field_changed.startsWith('pt_totals') ||
+        r.field_changed === 'qa_total'
+          ? 'totals.update'
+          : 'entry.update',
+      entity_type:
+        r.field_changed.startsWith('ww_totals') ||
+        r.field_changed.startsWith('pt_totals') ||
+        r.field_changed === 'qa_total'
+          ? 'grading_sheet'
+          : 'grade_entry',
+      entity_id: r.grade_entry_id,
+      context: {
+        field: r.field_changed,
+        old: r.old_value,
+        new: r.new_value,
+        was_locked: true,
+        approval_reference: r.approval_reference,
+        grading_sheet_id: r.grading_sheet_id,
+        legacy: true,
+      },
+      sheet_id: r.grading_sheet_id,
+      source: 'grade_audit_log',
+    }),
+  );
+
+  // Linear merge of two pre-sorted (desc) arrays — O(n) instead of O(n log n)
+  const merged: MergedRow[] = [];
+  let i = 0;
+  let j = 0;
+  while (merged.length < 500 && (i < newRows.length || j < legacyRows.length)) {
+    const a = newRows[i];
+    const b = legacyRows[j];
+    if (!b || (a && a.at >= b.at)) {
+      merged.push(a);
+      i++;
+    } else {
+      merged.push(b);
+      j++;
+    }
+  }
 
   // Stats compute over the FULL window (not the filtered view) — registrars
   // want a global health snapshot here, not a contextual count.

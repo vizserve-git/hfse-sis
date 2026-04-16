@@ -59,7 +59,8 @@ export default async function GradingListPage() {
         .eq('role', 'form_adviser')
     : Promise.resolve({ data: [] as unknown });
 
-  const [sheetsRes, blanksRes, advisorRes] = await Promise.all([
+  // Fetch sheets + advisor in parallel, then scope blanks query to visible sheet IDs
+  const [sheetsRes, advisorRes] = await Promise.all([
     supabase
       .from('grading_sheets')
       .select(
@@ -68,20 +69,25 @@ export default async function GradingListPage() {
          subject:subjects(id, code, name, is_examinable),
          section:sections(id, name, level:levels(id, code, label, level_type))`,
       ),
-    // grade_entries for blanks_remaining calculation.
-    // Blank = null in any slot of ww/pt/qa (or letter_grade for non-examinable).
-    // Excludes withdrawn and is_na (late enrollee) students from the count.
-    supabase
-      .from('grade_entries')
-      .select(
-        `grading_sheet_id, ww_scores, pt_scores, qa_score, letter_grade, is_na,
-         section_student:section_students(enrollment_status),
-         grading_sheet:grading_sheets(subject:subjects(is_examinable))`,
-      ),
     advisorPromise,
   ]);
 
   const sheets = sheetsRes.data;
+  const sheetIds = (sheets ?? []).map((s: { id: string }) => s.id);
+
+  // grade_entries for blanks_remaining — now scoped to visible sheets only.
+  // Blank = null in any slot of ww/pt/qa (or letter_grade for non-examinable).
+  // Excludes withdrawn and is_na (late enrollee) students from the count.
+  const blanksRes = sheetIds.length > 0
+    ? await supabase
+        .from('grade_entries')
+        .select(
+          `grading_sheet_id, ww_scores, pt_scores, qa_score, letter_grade, is_na,
+           section_student:section_students(enrollment_status),
+           grading_sheet:grading_sheets(subject:subjects(is_examinable))`,
+        )
+        .in('grading_sheet_id', sheetIds)
+    : { data: [] };
   const entriesForBlanks = blanksRes.data;
 
   type EntryForBlanks = {
