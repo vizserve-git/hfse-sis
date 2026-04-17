@@ -18,7 +18,7 @@ export default async function StudentDocumentDetailPage({
   const { enroleeNumber } = await params;
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
-  if (sessionUser.role !== 'p-file' && sessionUser.role !== 'superadmin') redirect('/');
+  if (sessionUser.role !== 'p-file' && sessionUser.role !== 'admin' && sessionUser.role !== 'superadmin') redirect('/');
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
@@ -28,6 +28,7 @@ export default async function StudentDocumentDetailPage({
   if (!student) notFound();
 
   const docRow = student.rawDocRow;
+  const canWrite = sessionUser.role === 'p-file' || sessionUser.role === 'superadmin';
 
   // Group slots by their document group
   const groups: { group: DocumentGroup; label: string; slots: typeof student.slots }[] = [];
@@ -152,6 +153,7 @@ export default async function StudentDocumentDetailPage({
                   expiryDate={slot.expiryDate}
                   expires={config?.expires ?? false}
                   meta={config?.meta ?? null}
+                  canWrite={canWrite}
                 />
               );
             })}

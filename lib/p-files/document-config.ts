@@ -65,7 +65,11 @@ export const GROUP_LABELS: Record<DocumentGroup, string> = {
   parent: 'Parent / Guardian Documents',
 };
 
-export type DocumentStatus = 'valid' | 'uploaded' | 'rejected' | 'expired' | 'missing' | 'na';
+// P-Files is a repository, not a review queue. The `rejected` state is
+// intentionally absent — document validation lives in the future SIS
+// module. `uploaded` remains as "Pending review" for parent self-serve
+// uploads whose status column has not yet been validated by SIS.
+export type DocumentStatus = 'valid' | 'uploaded' | 'expired' | 'missing' | 'na';
 
 /** Resolve the effective display status for a document slot. */
 export function resolveStatus(
@@ -78,8 +82,6 @@ export function resolveStatus(
 
   const s = (rawStatus ?? '').toLowerCase().trim();
 
-  if (s === 'rejected') return 'rejected';
-
   // For expiring docs, check if expired
   if (expires && expiryDate) {
     const expiry = new Date(expiryDate);
@@ -88,8 +90,8 @@ export function resolveStatus(
     if (expiry < today) return 'expired';
   }
 
-  if (s === 'valid' || s === 'approved') return 'valid';
-  if (s === 'uploaded' || url) return 'uploaded';
+  if (s === 'uploaded') return 'uploaded';
+  if (url) return 'valid';
 
   return 'missing';
 }

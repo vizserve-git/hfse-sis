@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { PASS_TYPES, type SlotMeta } from "@/lib/p-files/document-config";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -48,10 +49,12 @@ type UploadDialogProps = {
   label: string;
   expires: boolean;
   meta: SlotMeta | null;
+  /** True when the slot already has a file — triggers "Replace" UX + note field. */
+  isReplacement?: boolean;
   trigger?: React.ReactNode;
 };
 
-export function UploadDialog({ enroleeNumber, slotKey, label, expires, meta, trigger }: UploadDialogProps) {
+export function UploadDialog({ enroleeNumber, slotKey, label, expires, meta, isReplacement, trigger }: UploadDialogProps) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
@@ -61,12 +64,14 @@ export function UploadDialog({ enroleeNumber, slotKey, label, expires, meta, tri
   const [expiryDate, setExpiryDate] = useState("");
   const [passportNumber, setPassportNumber] = useState("");
   const [passType, setPassType] = useState("");
+  const [note, setNote] = useState("");
 
   function resetForm() {
     setSelectedFiles([]);
     setExpiryDate("");
     setPassportNumber("");
     setPassType("");
+    setNote("");
     setDragging(false);
     if (fileRef.current) fileRef.current.value = "";
   }
@@ -174,6 +179,7 @@ export function UploadDialog({ enroleeNumber, slotKey, label, expires, meta, tri
       if (expiryDate) formData.append("expiryDate", expiryDate);
       if (meta?.kind === "passport") formData.append("passportNumber", passportNumber.trim());
       if (meta?.kind === "pass") formData.append("passType", passType);
+      if (isReplacement && note.trim()) formData.append("note", note.trim());
 
       const res = await fetch(`/api/p-files/${enroleeNumber}/upload`, {
         method: "POST",
@@ -206,16 +212,20 @@ export function UploadDialog({ enroleeNumber, slotKey, label, expires, meta, tri
         {trigger ?? (
           <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
             <Upload className="size-3" />
-            Upload
+            {isReplacement ? "Replace" : "Upload"}
           </Button>
         )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-xl!">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle className="font-serif tracking-tight">Upload {label}</DialogTitle>
+            <DialogTitle className="font-serif tracking-tight">
+              {isReplacement ? `Replace ${label}` : `Upload ${label}`}
+            </DialogTitle>
             <DialogDescription className="text-[13px] leading-relaxed">
-              Upload on behalf of the parent. Drop multiple PDFs to merge them into one document.
+              {isReplacement
+                ? "The current file will be archived and viewable via History. Drop multiple PDFs to merge them into one document."
+                : "Upload on behalf of the parent. Drop multiple PDFs to merge them into one document."}
             </DialogDescription>
           </DialogHeader>
 
@@ -373,6 +383,24 @@ export function UploadDialog({ enroleeNumber, slotKey, label, expires, meta, tri
                 <p className="text-[11px] text-muted-foreground">Required for expiring documents (passport, pass).</p>
               </div>
             )}
+
+            {/* ── Replacement note (optional, only when replacing) ── */}
+            {isReplacement && (
+              <div className="grid gap-1.5">
+                <Label htmlFor={`note-${slotKey}`} className="text-[13px] font-medium text-foreground">
+                  Note <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Optional</span>
+                </Label>
+                <Textarea
+                  id={`note-${slotKey}`}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  disabled={busy}
+                  placeholder="Why is this being replaced? e.g. Parent emailed an updated passport."
+                  rows={2}
+                />
+                <p className="text-[11px] text-muted-foreground">Shown in the History dialog alongside the archived file.</p>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -381,7 +409,7 @@ export function UploadDialog({ enroleeNumber, slotKey, label, expires, meta, tri
             </Button>
             <Button type="submit" disabled={busy || !hasFiles}>
               {busy && <Loader2 className="size-3.5 animate-spin" />}
-              {isMerge ? "Merge & Upload" : "Upload"}
+              {isMerge ? "Merge & Upload" : isReplacement ? "Replace" : "Upload"}
             </Button>
           </DialogFooter>
         </form>

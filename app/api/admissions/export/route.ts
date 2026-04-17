@@ -6,14 +6,14 @@ import { requireCurrentAyCode } from '@/lib/academic-year';
 import { getOutdatedApplications } from '@/lib/admissions/dashboard';
 import { buildCsv } from '@/lib/csv';
 
-// Superadmin-only CSV export of the outdated-applications table for a given
-// AY. Surfaces the same rows the dashboard shows, but serialized for offline
-// triage. Gated at the route level — registrar + admin get 403.
+// Admin + superadmin CSV export of the outdated-applications table for a
+// given AY. Surfaces the same rows the dashboard shows, but serialized for
+// offline triage. Gated at the route level — registrar / teacher get 403.
 export async function GET(req: Request) {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   const role = getUserRole(userData.user);
-  if (role !== 'superadmin') {
+  if (role !== 'admin' && role !== 'superadmin') {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 

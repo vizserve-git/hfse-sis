@@ -34,18 +34,16 @@ import {
 import type { StudentCompleteness } from '@/lib/p-files/queries';
 import type { DocumentStatus } from '@/lib/p-files/document-config';
 
-type StatusFilter = 'all' | 'complete' | 'missing' | 'expired' | 'rejected' | 'uploaded';
+type StatusFilter = 'all' | 'complete' | 'missing' | 'expired' | 'uploaded';
 
 function StatusDot({ status }: { status: DocumentStatus }) {
   switch (status) {
     case 'valid':
-      return <span className="inline-block size-2.5 rounded-full bg-brand-mint" title="Valid" />;
+      return <span className="inline-block size-2.5 rounded-full bg-brand-mint" title="On file" />;
     case 'uploaded':
-      return <span className="inline-block size-2.5 rounded-full bg-primary" title="Uploaded" />;
+      return <span className="inline-block size-2.5 rounded-full bg-brand-amber" title="Pending review" />;
     case 'expired':
-      return <span className="inline-block size-2.5 rounded-full bg-brand-amber" title="Expired" />;
-    case 'rejected':
-      return <span className="inline-block size-2.5 rounded-full bg-destructive" title="Rejected" />;
+      return <span className="inline-block size-2.5 rounded-full bg-destructive" title="Expired" />;
     case 'missing':
       return <span className="inline-block size-2.5 rounded-full border border-border bg-muted" title="Missing" />;
     case 'na':
@@ -93,9 +91,6 @@ export function CompletenessTable({ students }: { students: StudentCompleteness[
           break;
         case 'expired':
           if (s.expired === 0) return false;
-          break;
-        case 'rejected':
-          if (s.rejected === 0) return false;
           break;
         case 'uploaded':
           if (s.uploaded === 0) return false;
@@ -186,8 +181,7 @@ export function CompletenessTable({ students }: { students: StudentCompleteness[
               <SelectItem value="complete">Complete</SelectItem>
               <SelectItem value="missing">Has missing</SelectItem>
               <SelectItem value="expired">Has expired</SelectItem>
-              <SelectItem value="rejected">Has rejected</SelectItem>
-              <SelectItem value="uploaded">Has pending</SelectItem>
+              <SelectItem value="uploaded">Pending review</SelectItem>
             </SelectContent>
           </Select>
 

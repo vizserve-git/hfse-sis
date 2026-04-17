@@ -57,7 +57,9 @@
       "Bash(awk -F/ '{dir=$\\(NF-1\\); sub\\(/\\\\/[^/]+$/, \"\"\\); print dir, \\(NF%1\\), $0}')",
       "Bash(rm -rf .next)",
       "Bash(git commit -m ' *)",
-      "Bash(node -e \"const m = require\\('next/cache'\\); console.log\\(m.revalidateTag?.toString\\(\\)?.slice\\(0,200\\)\\)\")"
+      "Bash(node -e \"const m = require\\('next/cache'\\); console.log\\(m.revalidateTag?.toString\\(\\)?.slice\\(0,200\\)\\)\")",
+      "Bash(rm \"C:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-markbook/app/api/p-files/[enroleeNumber]/status/route.ts\")",
+      "Bash(rmdir \"C:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-markbook/app/api/p-files/[enroleeNumber]/status\")"
     ]
   },
   "enabledMcpjsonServers": [

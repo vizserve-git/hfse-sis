@@ -73,7 +73,7 @@ export default async function AdmissionsDashboardPage({ searchParams }: PageProp
     getReferralSourceBreakdown(selectedAy),
   ]);
 
-  const canExport = role === 'superadmin';
+  const canExport = role === 'admin' || role === 'superadmin';
 
   return (
     <PageShell>

@@ -22,7 +22,6 @@ export type StudentCompleteness = {
   total: number;
   complete: number;
   expired: number;
-  rejected: number;
   missing: number;
   uploaded: number;
   slots: { key: string; label: string; status: DocumentStatus; expiryDate: string | null }[];
@@ -33,7 +32,6 @@ export type DashboardSummary = {
   fullyComplete: number;
   hasExpired: number;
   hasMissing: number;
-  hasRejected: number;
 };
 
 // ── Raw fetch ─────────────────────────────────────────────────────────────
@@ -121,7 +119,6 @@ function computeForStudent(
   const total = slots.length;
   const complete = slots.filter((s) => s.status === 'valid').length;
   const expired = slots.filter((s) => s.status === 'expired').length;
-  const rejected = slots.filter((s) => s.status === 'rejected').length;
   const uploaded = slots.filter((s) => s.status === 'uploaded').length;
   const missing = slots.filter((s) => s.status === 'missing').length;
 
@@ -134,7 +131,6 @@ function computeForStudent(
     total,
     complete,
     expired,
-    rejected,
     missing,
     uploaded,
     slots,
@@ -180,7 +176,6 @@ export async function getDocumentDashboardData(ayCode: string): Promise<{
     fullyComplete: students.filter((s) => s.complete === s.total).length,
     hasExpired: students.filter((s) => s.expired > 0).length,
     hasMissing: students.filter((s) => s.missing > 0).length,
-    hasRejected: students.filter((s) => s.rejected > 0).length,
   };
 
   return { students, summary };
@@ -190,6 +185,50 @@ export type StudentDocumentDetail = StudentCompleteness & {
   /** Raw document row — use to read file URLs for the detail page. */
   rawDocRow: Record<string, unknown>;
 };
+
+export type DocumentRevision = {
+  id: string;
+  archivedUrl: string;
+  statusSnapshot: string | null;
+  expirySnapshot: string | null;
+  passportNumberSnapshot: string | null;
+  passTypeSnapshot: string | null;
+  note: string | null;
+  replacedByEmail: string | null;
+  replacedAt: string;
+};
+
+/** Revision history for one document slot, newest first. */
+export async function getDocumentRevisions(
+  ayCode: string,
+  enroleeNumber: string,
+  slotKey: string,
+): Promise<DocumentRevision[]> {
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from('p_file_revisions')
+    .select(
+      'id, archived_url, status_snapshot, expiry_snapshot, passport_number_snapshot, pass_type_snapshot, note, replaced_by_email, replaced_at',
+    )
+    .eq('ay_code', ayCode)
+    .eq('enrolee_number', enroleeNumber)
+    .eq('slot_key', slotKey)
+    .order('replaced_at', { ascending: false });
+
+  if (error || !data) return [];
+
+  return data.map((r) => ({
+    id: r.id as string,
+    archivedUrl: r.archived_url as string,
+    statusSnapshot: (r.status_snapshot ?? null) as string | null,
+    expirySnapshot: (r.expiry_snapshot ?? null) as string | null,
+    passportNumberSnapshot: (r.passport_number_snapshot ?? null) as string | null,
+    passTypeSnapshot: (r.pass_type_snapshot ?? null) as string | null,
+    note: (r.note ?? null) as string | null,
+    replacedByEmail: (r.replaced_by_email ?? null) as string | null,
+    replacedAt: r.replaced_at as string,
+  }));
+}
 
 export async function getStudentDocumentDetail(
   ayCode: string,

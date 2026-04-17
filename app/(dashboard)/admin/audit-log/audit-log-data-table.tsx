@@ -766,29 +766,17 @@ function ActionDetails({ row }: { row: MergedRow }) {
     case "pfile.upload": {
       const label = str("label") ?? str("slotKey") ?? "document";
       const merged = ctx["merged"] === true;
+      const replaced = ctx["replaced"] === true;
       const count = ctx["fileCount"] ? String(ctx["fileCount"]) : "1";
       return (
         <span>
-          Uploaded <b>{label}</b> for student <code className="rounded bg-muted px-1 text-[10px]">{row.entity_id}</code>
+          {replaced ? "Replaced " : "Uploaded "}<b>{label}</b> for student <code className="rounded bg-muted px-1 text-[10px]">{row.entity_id}</code>
           {merged && <span className="text-muted-foreground"> · merged {count} PDFs</span>}
           {str("expiryDate") && <span className="text-muted-foreground"> · expires {str("expiryDate")}</span>}
+          {str("note") && <span className="text-muted-foreground"> · note: {str("note")}</span>}
         </span>
       );
     }
-    case "pfile.approve":
-      return (
-        <span>
-          Approved <b>{str("label") ?? str("slotKey") ?? "document"}</b> for student{" "}
-          <code className="rounded bg-muted px-1 text-[10px]">{row.entity_id}</code>
-        </span>
-      );
-    case "pfile.reject":
-      return (
-        <span>
-          Rejected <b>{str("label") ?? str("slotKey") ?? "document"}</b> for student{" "}
-          <code className="rounded bg-muted px-1 text-[10px]">{row.entity_id}</code>
-        </span>
-      );
     default:
       return <span className="text-muted-foreground">{JSON.stringify(ctx)}</span>;
   }

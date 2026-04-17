@@ -1,19 +1,27 @@
-# P-Files Module (Student Document Management)
+# P-Files Module (Student Document Repository)
 
 ## Overview
 
-The P-Files module is a document completeness tracker and management tool for student enrollment documents. It lives alongside the markbook as a separate route group (`/(p-files)/`) in the same Next.js app, sharing auth and Supabase infrastructure.
+The P-Files module is the **document repository** for enrolled students' validated records. Admissions staff come here to retrieve the current passport, birth certificate, medical exam, parent/guardian passes, etc., for any student. It is **not** a review queue — document validation (approve/reject) lives in the future SIS module, where admissions staff manage the full student record.
+
+P-Files lives alongside the markbook as a separate route group (`/(p-files)/`) in the same Next.js app, sharing auth and Supabase infrastructure.
 
 **Current manual process:** Parents upload documents during enrollment via the admissions portal (`enrol.hfse.edu.sg`). Ms. Gael (admissions) collects them, forwards to the P-files person, who manually uploads to SharePoint folders organized by student name/number. No centralized tracking of what's complete vs missing.
 
-**Goal:** Replace the manual SharePoint workflow with an in-app dashboard that reads from `ay{YY}_enrolment_documents` (already populated by parent uploads), lets staff approve/reject documents, upload on behalf of parents, and flag expired documents.
+**Goal:** Replace the manual SharePoint workflow with an in-app cabinet that reads from `ay{YY}_enrolment_documents` (already populated by parent uploads), lets staff upload replacements on behalf of parents, preserves every previous version in a revision history, and flags expired documents.
 
 ## Access
 
-- **`p-file` role** — new role in `app_metadata.role`, dedicated to the P-files staff member
-- **`superadmin`** — full access as always
-- `proxy.ts` gates `/p-files/*` routes to these two roles only
-- Teachers, registrar, and admin do **not** have access
+Three-tier access:
+
+| Role | Browse / view / history | Upload / replace |
+|---|---|---|
+| `p-file` officer | ✅ | ✅ |
+| `superadmin` | ✅ | ✅ |
+| `admin` | ✅ (via module switcher) | ❌ |
+| `teacher`, `registrar`, parents | ❌ | ❌ |
+
+`proxy.ts::ROUTE_ACCESS` allows `p-file + admin + superadmin` to reach `/p-files/*`; the layouts re-assert this. Write gates live at the API layer — `POST /api/p-files/[enroleeNumber]/upload` requires `['p-file', 'superadmin']`, so even if an admin bypasses UI their request is rejected. `DocumentCard` takes a `canWrite` prop (server-rendered from the session role) that hides the Upload / Replace button for admin viewers.
 
 ## Required Documents Per Student
 
@@ -21,25 +29,25 @@ Two categories based on expiry behavior:
 
 ### Non-expiring documents
 
-| Document | DB column (URL) | DB column (status) | Status flow |
-|----------|----------------|-------------------|-------------|
-| ID Picture | `idPicture` | `idPictureStatus` | Uploaded → Valid / Rejected |
-| Birth Certificate | `birthCert` | `birthCertStatus` | Uploaded → Valid / Rejected |
-| Educational Certificate | `educCert` | `educCertStatus` | Uploaded → Valid / Rejected |
-| Medical Exam | `medical` | `medicalStatus` | Uploaded → Valid / Rejected |
+| Document | DB column (URL) | DB column (status) |
+|----------|----------------|-------------------|
+| ID Picture | `idPicture` | `idPictureStatus` |
+| Birth Certificate | `birthCert` | `birthCertStatus` |
+| Educational Certificate | `educCert` | `educCertStatus` |
+| Medical Exam | `medical` | `medicalStatus` |
 
 ### Expiring documents
 
-| Document | DB column (URL) | DB column (status) | Expiry column | Status flow |
-|----------|----------------|-------------------|---------------|-------------|
-| Passport | `passport` | `passportStatus` | `passportExpiry` | Valid → Expired (auto) / Rejected |
-| Student Pass | `pass` | `passStatus` | `passExpiry` | Valid → Expired (auto) / Rejected |
-| Mother's Passport | `motherPassport` | `motherPassportStatus` | `motherPassportExpiry` | Valid → Expired (auto) / Rejected |
-| Mother's Pass | `motherPass` | `motherPassStatus` | `motherPassExpiry` | Valid → Expired (auto) / Rejected |
-| Father's Passport | `fatherPassport` | `fatherPassportStatus` | `fatherPassportExpiry` | Valid → Expired (auto) / Rejected |
-| Father's Pass | `fatherPass` | `fatherPassStatus` | `fatherPassExpiry` | Valid → Expired (auto) / Rejected |
-| Guardian's Passport | `guardianPassport` | `guardianPassportStatus` | `guardianPassportExpiry` | Valid → Expired (auto) / Rejected |
-| Guardian's Pass | `guardianPass` | `guardianPassStatus` | `guardianPassExpiry` | Valid → Expired (auto) / Rejected |
+| Document | DB column (URL) | DB column (status) | Expiry column |
+|----------|----------------|-------------------|---------------|
+| Passport | `passport` | `passportStatus` | `passportExpiry` |
+| Student Pass | `pass` | `passStatus` | `passExpiry` |
+| Mother's Passport | `motherPassport` | `motherPassportStatus` | `motherPassportExpiry` |
+| Mother's Pass | `motherPass` | `motherPassStatus` | `motherPassExpiry` |
+| Father's Passport | `fatherPassport` | `fatherPassportStatus` | `fatherPassportExpiry` |
+| Father's Pass | `fatherPass` | `fatherPassStatus` | `fatherPassExpiry` |
+| Guardian's Passport | `guardianPassport` | `guardianPassportStatus` | `guardianPassportExpiry` |
+| Guardian's Pass | `guardianPass` | `guardianPassStatus` | `guardianPassExpiry` |
 
 ### Conditional logic
 
@@ -47,9 +55,19 @@ Two categories based on expiry behavior:
 - Guardian documents required only if `guardianEmail` is present in `ay{YY}_enrolment_applications`
 - Mother documents always required (assumption — validate with stakeholder)
 
-### Expiry detection
+### Status model in P-Files
 
-"Expired" is computed at display time: `expiryDate < today`. The `*Status` column may still say "Valid" in the DB even if the document has expired — the UI should override and show "Expired" with a warning when the expiry date has passed.
+P-Files collapses the raw `{slotKey}Status` column to five display states. **It does not mutate the status column** — that's SIS's job.
+
+| Display       | When                                                                       |
+|---------------|----------------------------------------------------------------------------|
+| On file       | URL present and raw status is not `Uploaded` (incl. `Valid` / `Approved`)  |
+| Pending review| URL present and raw status is `Uploaded` (parent self-serve, not yet SIS-validated) |
+| Expired       | Expiring slot whose expiry date is before today — overrides other states   |
+| Missing       | No URL and no status                                                       |
+| N/A           | Conditional slot that doesn't apply (e.g. no `fatherEmail`)                |
+
+There is **no `Rejected` state in P-Files** — rejection is a validation call and lives in SIS. Resolution happens in `lib/p-files/document-config.ts::resolveStatus`.
 
 ## Data Source
 
@@ -67,25 +85,30 @@ Join path: `enrolment_documents.studentNumber` → `enrolment_applications.stude
 
 ### 1. Dashboard (read-only overview)
 
-- Per-student completeness matrix: which documents uploaded, which missing, which expired
-- Section/level filter
-- Summary stats: total students, % complete, count of expired documents
+- Per-student completeness matrix: which documents on file, which missing, which pending review (parent self-serve, awaiting SIS validation), which expired
+- Section/level filter + status filter (Complete / Has missing / Has expired / Pending review)
+- Summary stats: total students, fully complete, students with expired docs, students with missing docs
 - AY switcher (same pattern as admissions dashboard)
 
 ### 2. Student detail view
 
-- All 9+ document slots with current status, file preview/download link, expiry date
-- Visual indicators: green (valid), amber (uploaded/pending review), red (missing/expired/rejected)
+- All 12 document slots with current status, file preview/download link, expiry date, **History button** for any slot with a file
+- Visual indicators: mint (on file), amber (pending review), red (expired), dashed (missing), muted (N/A)
 
-### 3. Approve / Reject
+### 3. Upload / Replace on behalf
 
-- Staff can update `*Status` columns to "Valid" or "Rejected"
-- Writes directly to `ay{YY}_enrolment_documents` via service-role client
+- Staff upload a document on behalf of a parent (e.g. parent emailed it, or brought a physical copy)
+- The button labels switch based on slot state: **Upload** when missing, **Replace** when a file is already on record
+- Staff uploads always set the DB status column to `'Valid'` so the repository view reflects that the staff member accepted the file. Validation semantics still belong to SIS.
+- Multipart: one or more files. Single file → stored as-is; multiple PDFs → merged server-side via `pdf-merger-js`. Limits: 10 MB per file, 30 MB per request
+- Expiring slots require structured metadata (passport number *or* pass type + expiry date) which is mirrored into `ay{YY}_enrolment_applications`
 
-### 4. Upload on behalf
+### 4. Revision history
 
-- Staff can upload a document on a parent's behalf (e.g. parent emailed it, or brought a physical copy)
-- Uploads to Supabase Storage, updates the URL column + sets status to "Uploaded"
+- Every **Replace** on a slot that already has a file archives the previous file to `parent-portal/<prefix>/<enroleeNumber>/<slotKey>/revisions/<iso>.<ext>` and inserts one row into `p_file_revisions` (migration `011_p_file_revisions.sql`)
+- The row snapshots pre-replacement state: archived URL + path, raw status, expiry, passport number or pass type, optional staff-entered note, actor (`replaced_by_user_id` + `replaced_by_email`), `replaced_at`
+- Readable via `GET /api/p-files/[enroleeNumber]/revisions?slotKey=...` — surfaced in the UI through `components/p-files/history-dialog.tsx` (triggered from the History button on each document card)
+- Append-only per Hard Rule #6 — rows are never updated or deleted, even when the corresponding slot is replaced again later
 
 ## Architecture
 
@@ -95,9 +118,14 @@ Join path: `enrolment_documents.studentNumber` → `enrolment_applications.stude
 app/
 ├── (p-files)/p-files/
 │   ├── page.tsx              ← dashboard: completeness matrix
-│   ├── [studentNumber]/
-│   │   └── page.tsx          ← student detail: all documents
+│   ├── [enroleeNumber]/
+│   │   └── page.tsx          ← student detail: all documents + history
+│   ├── audit-log/            ← module-scoped audit log (pfile.* actions)
 │   └── layout.tsx            ← p-files shell with own sidebar
+
+app/api/p-files/[enroleeNumber]/
+├── upload/route.ts           ← POST — merge + archive-on-replace
+└── revisions/route.ts        ← GET ?slotKey=… — revision list for History dialog
 ```
 
 ### Module switcher
@@ -111,15 +139,19 @@ After login, the root `/` page (or sidebar) shows a module picker: Markbook vs P
 - Same `lib/academic-year.ts` for AY resolution
 - Same `lib/supabase/admissions.ts` patterns for querying admissions tables
 
-### New code
+### Code map
 
-- `lib/p-files/documents.ts` — query helpers for `enrolment_documents` + completeness computation
-- `components/p-files/` — dashboard cards, document grid, upload dialog
-- `app/api/p-files/` — API routes for status updates and file uploads
+- `lib/p-files/document-config.ts` — slot definitions + `resolveStatus` + `PASS_TYPES`
+- `lib/p-files/queries.ts` — `getDocumentDashboardData` (cached), `getStudentDocumentDetail`, `getDocumentRevisions`
+- `lib/p-files/mutations.ts` — `createRevision` (service-role insert into `p_file_revisions`)
+- `components/p-files/` — `summary-cards`, `completeness-table`, `document-card`, `upload-dialog`, `history-dialog`
+- `app/api/p-files/[enroleeNumber]/upload` — POST: merge + archive-on-replace + dual-table write + audit
+- `app/api/p-files/[enroleeNumber]/revisions` — GET: list archived versions for one slot
 
 ## Not in scope (for now)
 
-- Revision history / audit trail for document status changes (add if needed)
-- Notification to parents when a document is rejected (could use Resend later)
-- Bulk operations (approve all, export missing list)
+- **Approve / reject of documents** — moves to the SIS module (see `docs/context/13-sis-module.md`). P-Files only writes `Status='Valid'` on staff uploads; SIS becomes the primary writer of the `{slotKey}Status` column.
+- Bulk operations (bulk upload, export missing list)
 - Integration with SharePoint (the goal is to replace SharePoint, not sync with it)
+- Revision rollback UI — the History dialog is read-only. Restoring a prior version means re-uploading it via the Replace flow, which will itself create a new revision.
+- Revision cleanup / retention policy — revisions are append-only. If storage cost becomes a concern, a scheduled purge job against `p_file_revisions` + `storage.objects` would go here.

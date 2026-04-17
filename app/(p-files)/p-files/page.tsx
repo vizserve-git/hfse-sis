@@ -11,7 +11,7 @@ import { redirect } from "next/navigation";
 export default async function PFilesDashboard({ searchParams }: { searchParams: Promise<{ ay?: string }> }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect("/login");
-  if (sessionUser.role !== "p-file" && sessionUser.role !== "superadmin") redirect("/");
+  if (sessionUser.role !== "p-file" && sessionUser.role !== "admin" && sessionUser.role !== "superadmin") redirect("/");
 
   const service = createServiceClient();
   const currentAy = await getCurrentAcademicYear(service);
@@ -44,29 +44,26 @@ export default async function PFilesDashboard({ searchParams }: { searchParams: 
           Student document completeness.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Track enrollment document status for all students. Review, approve, or upload documents on behalf of parents.
+          Retrieve validated student, parent, and guardian documents. Upload or replace on behalf of parents — prior versions are preserved in revision history.
         </p>
       </header>
 
       <SummaryCards summary={summary} />
 
       <div className="flex flex-col items-center justify-between gap-3 md:flex-row">
-        <section className="max-w-xl rounded-xl border border-hairline bg-accent/50 p-4 text-xs text-muted-foreground">
+        <section className="w-full max-w-xl rounded-xl border border-hairline bg-white p-4 text-xs text-muted-foreground">
           <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-brand-indigo-deep">
             Document Status Legend
           </p>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5">
             <span className="flex items-center gap-1.5">
-              <span className="inline-block size-2.5 rounded-full bg-brand-mint" /> Valid
+              <span className="inline-block size-2.5 rounded-full bg-brand-mint" /> On file
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block size-2.5 rounded-full bg-primary" /> Uploaded (pending review)
+              <span className="inline-block size-2.5 rounded-full bg-brand-amber" /> Pending review
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block size-2.5 rounded-full bg-brand-amber" /> Expired
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block size-2.5 rounded-full bg-destructive" /> Rejected
+              <span className="inline-block size-2.5 rounded-full bg-destructive" /> Expired
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block size-2.5 rounded-full border border-border bg-muted" /> Missing

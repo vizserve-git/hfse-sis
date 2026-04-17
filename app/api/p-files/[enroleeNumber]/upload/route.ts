@@ -5,9 +5,11 @@ import { requireCurrentAyCode } from '@/lib/academic-year';
 import { logAction } from '@/lib/audit/log-action';
 import { createServiceClient } from '@/lib/supabase/service';
 import { DOCUMENT_SLOTS } from '@/lib/p-files/document-config';
+import { createRevision } from '@/lib/p-files/mutations';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB per file
 const MAX_TOTAL_SIZE = 30 * 1024 * 1024; // 30 MB total
+const BUCKET = 'parent-portal';
 
 function isPdf(file: File): boolean {
   return (
@@ -16,11 +18,34 @@ function isPdf(file: File): boolean {
   );
 }
 
+// Strip everything up to and including `/<bucket>/` from a Supabase Storage
+// public URL, returning the object path within the bucket. Returns null if
+// the URL does not contain the expected prefix.
+function extractStoragePath(url: string, bucket: string): string | null {
+  const marker = `/${bucket}/`;
+  const idx = url.indexOf(marker);
+  if (idx < 0) return null;
+  const tail = url.slice(idx + marker.length);
+  // Trim any query string or fragment
+  return tail.split('?')[0].split('#')[0];
+}
+
+function extFromPath(path: string): string {
+  const base = path.split('/').pop() ?? path;
+  const dot = base.lastIndexOf('.');
+  return dot >= 0 ? base.slice(dot + 1) : 'pdf';
+}
+
 // POST /api/p-files/[enroleeNumber]/upload
-// Multipart form: file(s) + slotKey + optional metadata fields.
+// Multipart form: file(s) + slotKey + optional metadata fields + optional note.
 // Single file: upload as-is. Multiple files: merge PDFs server-side.
-// Writes to enrolment_documents (file URL + status) and, for expiring docs,
-// enrolment_applications (passport number / pass type + expiry).
+//
+// When a file already exists for the slot, the current object is MOVED to
+// `<prefix>/<enroleeNumber>/<slotKey>/revisions/<iso>.<ext>` and one row is
+// inserted into `p_file_revisions` capturing the snapshot. The canonical
+// path is then overwritten with the new upload. P-Files no longer validates
+// documents — it is a repository, and `{slotKey}Status` is always written
+// as 'Valid' for staff uploads.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ enroleeNumber: string }> },
@@ -40,6 +65,8 @@ export async function POST(
   const expiryDate = formData.get('expiryDate') as string | null;
   const passportNumber = formData.get('passportNumber') as string | null;
   const passType = formData.get('passType') as string | null;
+  const noteRaw = formData.get('note');
+  const note = typeof noteRaw === 'string' && noteRaw.trim() ? noteRaw.trim() : null;
 
   if (files.length === 0 || !slotKey) {
     return NextResponse.json({ error: 'file and slotKey are required' }, { status: 400 });
@@ -104,7 +131,46 @@ export async function POST(
   const ayCode = await requireCurrentAyCode(service);
   const prefix = `ay${ayCode.replace(/^AY/i, '').toLowerCase()}`;
 
-  // Prepare the file buffer to upload
+  // ── Look up current state for this slot to see if we need to archive ──
+  const selectCols = [
+    `"${slotKey}"`,
+    `"${slotKey}Status"`,
+    ...(slot.expires ? [`"${slotKey}Expiry"`] : []),
+  ].join(', ');
+
+  const { data: currentDoc } = await service
+    .from(`${prefix}_enrolment_documents`)
+    .select(selectCols)
+    .eq('enroleeNumber', enroleeNumber)
+    .maybeSingle();
+
+  const currentRow = (currentDoc ?? {}) as Record<string, unknown>;
+  const currentUrl = typeof currentRow[slotKey] === 'string' ? (currentRow[slotKey] as string) : null;
+  const currentStatus = typeof currentRow[`${slotKey}Status`] === 'string'
+    ? (currentRow[`${slotKey}Status`] as string)
+    : null;
+  const currentExpiry = slot.expires && typeof currentRow[`${slotKey}Expiry`] === 'string'
+    ? (currentRow[`${slotKey}Expiry`] as string)
+    : null;
+
+  // Snapshot passport / pass metadata if we'll be archiving
+  let currentPassportNumber: string | null = null;
+  let currentPassType: string | null = null;
+  if (currentUrl && slot.meta) {
+    const metaCol = slot.meta.numberCol;
+    const { data: appRow } = await service
+      .from(`${prefix}_enrolment_applications`)
+      .select(`"${metaCol}"`)
+      .eq('enroleeNumber', enroleeNumber)
+      .maybeSingle();
+    const val = (appRow as Record<string, unknown> | null)?.[metaCol];
+    if (typeof val === 'string') {
+      if (slot.meta.kind === 'passport') currentPassportNumber = val;
+      else currentPassType = val;
+    }
+  }
+
+  // Prepare the new file buffer to upload
   let uploadBuffer: Buffer;
   let contentType: string;
   let ext: string;
@@ -134,13 +200,64 @@ export async function POST(
     }
   }
 
-  // Upload to Supabase Storage
-  const storagePath = `${prefix}/${enroleeNumber}/${slotKey}.${ext}`;
-  const bucket = 'parent-portal';
+  const canonicalPath = `${prefix}/${enroleeNumber}/${slotKey}.${ext}`;
 
+  // ── Archive the current file (if any) before overwriting ──
+  let didReplace = false;
+  if (currentUrl) {
+    const currentPath = extractStoragePath(currentUrl, BUCKET);
+    if (currentPath) {
+      const currentExt = extFromPath(currentPath);
+      const iso = new Date().toISOString().replace(/[:.]/g, '-');
+      const archivePath = `${prefix}/${enroleeNumber}/${slotKey}/revisions/${iso}.${currentExt}`;
+
+      const { error: moveError } = await service.storage
+        .from(BUCKET)
+        .move(currentPath, archivePath);
+
+      if (moveError) {
+        // If the source doesn't exist the move errors — treat as a soft miss
+        // (the DB had a URL but storage didn't). Log and proceed without
+        // archiving rather than blocking the replacement.
+        console.error(
+          `[p-files] archive move failed for ${enroleeNumber}/${slotKey}:`,
+          moveError.message,
+        );
+      } else {
+        const { data: archiveUrlData } = service.storage
+          .from(BUCKET)
+          .getPublicUrl(archivePath);
+        const archivedUrl = archiveUrlData.publicUrl;
+
+        const revResult = await createRevision(service, {
+          ayCode,
+          enroleeNumber,
+          slotKey,
+          archivedUrl,
+          archivedPath: archivePath,
+          statusSnapshot: currentStatus,
+          expirySnapshot: currentExpiry,
+          passportNumberSnapshot: currentPassportNumber,
+          passTypeSnapshot: currentPassType,
+          note,
+          replacedByUserId: auth.user.id,
+          replacedByEmail: auth.user.email ?? null,
+        });
+        if (!revResult.ok) {
+          console.error(
+            `[p-files] createRevision failed for ${enroleeNumber}/${slotKey}:`,
+            revResult.error,
+          );
+        }
+        didReplace = true;
+      }
+    }
+  }
+
+  // ── Upload the new file to the canonical path ──
   const { error: uploadError } = await service.storage
-    .from(bucket)
-    .upload(storagePath, uploadBuffer, { upsert: true, contentType });
+    .from(BUCKET)
+    .upload(canonicalPath, uploadBuffer, { upsert: true, contentType });
 
   if (uploadError) {
     return NextResponse.json(
@@ -150,7 +267,7 @@ export async function POST(
   }
 
   // Get public URL
-  const { data: urlData } = service.storage.from(bucket).getPublicUrl(storagePath);
+  const { data: urlData } = service.storage.from(BUCKET).getPublicUrl(canonicalPath);
   const publicUrl = urlData.publicUrl;
 
   // --- Table 1: enrolment_documents (file URL + status + expiry) ---
@@ -196,6 +313,7 @@ export async function POST(
       return NextResponse.json({
         ok: true,
         url: publicUrl,
+        replaced: didReplace,
         warning: 'Document uploaded but application metadata update failed. Please update manually.',
       });
     }
@@ -213,11 +331,13 @@ export async function POST(
       label: slot.label,
       fileCount: files.length,
       merged: files.length > 1,
+      replaced: didReplace,
       expiryDate: expiryDate ?? undefined,
+      ...(note ? { note } : {}),
       ...(slot.meta?.kind === 'passport' ? { passportNumber } : {}),
       ...(slot.meta?.kind === 'pass' ? { passType } : {}),
     },
   });
 
-  return NextResponse.json({ ok: true, url: publicUrl });
+  return NextResponse.json({ ok: true, url: publicUrl, replaced: didReplace });
 }

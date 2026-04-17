@@ -16,9 +16,9 @@ import { AuditLogDataTable, type MergedRow } from '@/app/(dashboard)/admin/audit
 export default async function PFilesAuditLogPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
-  if (sessionUser.role !== 'p-file' && sessionUser.role !== 'superadmin') redirect('/');
+  if (sessionUser.role !== 'p-file' && sessionUser.role !== 'admin' && sessionUser.role !== 'superadmin') redirect('/');
 
-  const canExport = sessionUser.role === 'superadmin';
+  const canExport = sessionUser.role === 'admin' || sessionUser.role === 'superadmin';
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -69,7 +69,7 @@ export default async function PFilesAuditLogPage() {
           Audit log.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Document uploads, approvals, and rejections. Append-only.
+          Document uploads and replacements. Append-only.
         </p>
       </header>
 

@@ -23,9 +23,7 @@ export type AuditAction =
   | 'grade_change_cancelled'
   | 'grade_change_applied'
   | 'grade_correction'
-  | 'pfile.upload'
-  | 'pfile.approve'
-  | 'pfile.reject';
+  | 'pfile.upload';
 
 export type AuditEntityType =
   | 'grading_sheet'

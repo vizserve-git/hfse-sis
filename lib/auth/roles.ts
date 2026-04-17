@@ -108,7 +108,7 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   { prefix: '/admin',        allowed: ['registrar', 'admin', 'superadmin'] },
   { prefix: '/report-cards', allowed: ['registrar', 'admin', 'superadmin'] },
   { prefix: '/grading',      allowed: ['teacher', 'registrar', 'admin', 'superadmin'] },
-  { prefix: '/p-files',      allowed: ['p-file', 'superadmin'] },
+  { prefix: '/p-files',      allowed: ['p-file', 'admin', 'superadmin'] },
 ];
 
 export function getUserRole(user: User | null | undefined): Role | null {

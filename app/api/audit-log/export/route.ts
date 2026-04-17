@@ -5,14 +5,14 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { getUserRole } from '@/lib/auth/roles';
 import { buildCsv } from '@/lib/csv';
 
-// Superadmin-only CSV export of the audit log within a date range.
+// Admin + superadmin CSV export of the audit log within a date range.
 // Unions `public.audit_log` + legacy `public.grade_audit_log` filtered by
 // timestamp, same merge shape the /admin/audit-log page uses.
 export async function GET(req: Request) {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   const role = getUserRole(userData.user);
-  if (role !== 'superadmin') {
+  if (role !== 'admin' && role !== 'superadmin') {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
