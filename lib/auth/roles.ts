@@ -78,48 +78,48 @@ export const NAV_BY_MODULE: {
 } = {
   markbook: {
     teacher: [
-      { items: [{ href: "/", label: "Dashboard" }] },
+      { items: [{ href: "/markbook", label: "Dashboard" }] },
       {
         label: "Grading",
         items: [
-          { href: "/grading", label: "My Sheets" },
-          { href: "/grading/requests", label: "My Requests", badgeKey: "changeRequests" },
+          { href: "/markbook/grading", label: "My Sheets" },
+          { href: "/markbook/grading/requests", label: "My Requests", badgeKey: "changeRequests" },
         ],
       },
     ],
     registrar: [
-      { items: [{ href: "/", label: "Dashboard" }] },
+      { items: [{ href: "/markbook", label: "Dashboard" }] },
       {
         label: "Grading",
         items: [
-          { href: "/grading", label: "All Sheets" },
-          { href: "/grading/new", label: "New Sheet" },
+          { href: "/markbook/grading", label: "All Sheets" },
+          { href: "/markbook/grading/new", label: "New Sheet" },
         ],
       },
       {
         label: "Students",
         items: [
-          { href: "/admin/sections", label: "Sections" },
-          { href: "/admin/sync-students", label: "Sync from Admissions" },
+          { href: "/markbook/sections", label: "Sections" },
+          { href: "/markbook/sync-students", label: "Sync from Admissions" },
         ],
       },
-      { items: [{ href: "/report-cards", label: "Report Cards" }] },
+      { items: [{ href: "/markbook/report-cards", label: "Report Cards" }] },
       {
         label: "Admin",
         items: [
           { href: "/admin/admissions", label: "Admissions Dashboard" },
-          { href: "/admin/change-requests", label: "Change Requests", badgeKey: "changeRequests" },
-          { href: "/admin/audit-log", label: "Audit Log" },
+          { href: "/markbook/change-requests", label: "Change Requests", badgeKey: "changeRequests" },
+          { href: "/markbook/audit-log", label: "Audit Log" },
         ],
       },
     ],
     admin: [
-      { items: [{ href: "/", label: "Dashboard" }] },
+      { items: [{ href: "/markbook", label: "Dashboard" }] },
       {
         label: "Students",
-        items: [{ href: "/admin/sections", label: "Sections" }],
+        items: [{ href: "/markbook/sections", label: "Sections" }],
       },
-      { items: [{ href: "/report-cards", label: "Report Cards" }] },
+      { items: [{ href: "/markbook/report-cards", label: "Report Cards" }] },
       {
         label: "Admissions",
         items: [{ href: "/admin/admissions", label: "Pipeline Dashboard" }],
@@ -127,20 +127,20 @@ export const NAV_BY_MODULE: {
       {
         label: "Admin",
         items: [
-          { href: "/admin/change-requests", label: "Change Requests", badgeKey: "changeRequests" },
-          { href: "/admin/audit-log", label: "Audit Log" },
+          { href: "/markbook/change-requests", label: "Change Requests", badgeKey: "changeRequests" },
+          { href: "/markbook/audit-log", label: "Audit Log" },
         ],
       },
     ],
     // school_admin mirrors admin MINUS the "Change Requests" approval inbox —
     // school admins don't approve grade changes (that's academic admin work).
     school_admin: [
-      { items: [{ href: "/", label: "Dashboard" }] },
+      { items: [{ href: "/markbook", label: "Dashboard" }] },
       {
         label: "Students",
-        items: [{ href: "/admin/sections", label: "Sections" }],
+        items: [{ href: "/markbook/sections", label: "Sections" }],
       },
-      { items: [{ href: "/report-cards", label: "Report Cards" }] },
+      { items: [{ href: "/markbook/report-cards", label: "Report Cards" }] },
       {
         label: "Admissions",
         items: [{ href: "/admin/admissions", label: "Pipeline Dashboard" }],
@@ -148,27 +148,27 @@ export const NAV_BY_MODULE: {
       {
         label: "Admin",
         items: [
-          { href: "/admin/audit-log", label: "Audit Log" },
+          { href: "/markbook/audit-log", label: "Audit Log" },
         ],
       },
     ],
     superadmin: [
-      { items: [{ href: "/", label: "Dashboard" }] },
+      { items: [{ href: "/markbook", label: "Dashboard" }] },
       {
         label: "Grading",
         items: [
-          { href: "/grading", label: "All Sheets" },
-          { href: "/grading/new", label: "New Sheet" },
+          { href: "/markbook/grading", label: "All Sheets" },
+          { href: "/markbook/grading/new", label: "New Sheet" },
         ],
       },
       {
         label: "Students",
         items: [
-          { href: "/admin/sections", label: "Sections" },
-          { href: "/admin/sync-students", label: "Sync from Admissions" },
+          { href: "/markbook/sections", label: "Sections" },
+          { href: "/markbook/sync-students", label: "Sync from Admissions" },
         ],
       },
-      { items: [{ href: "/report-cards", label: "Report Cards" }] },
+      { items: [{ href: "/markbook/report-cards", label: "Report Cards" }] },
       {
         label: "Admissions",
         items: [{ href: "/admin/admissions", label: "Pipeline Dashboard" }],
@@ -176,8 +176,8 @@ export const NAV_BY_MODULE: {
       {
         label: "Admin",
         items: [
-          { href: "/admin/change-requests", label: "Change Requests", badgeKey: "changeRequests" },
-          { href: "/admin/audit-log", label: "Audit Log" },
+          { href: "/markbook/change-requests", label: "Change Requests", badgeKey: "changeRequests" },
+          { href: "/markbook/audit-log", label: "Audit Log" },
         ],
       },
     ],
@@ -193,9 +193,8 @@ export const NAV_BY_MODULE: {
 export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   { prefix: "/sis/admin/approvers", allowed: ["superadmin"] },
   { prefix: "/sis/ay-setup", allowed: ["school_admin", "admin", "superadmin"] },
-  { prefix: "/admin", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/report-cards", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
-  { prefix: "/grading", allowed: ["teacher", "registrar", "admin", "superadmin"] },
+  { prefix: "/admin/admissions", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
+  { prefix: "/markbook", allowed: ["teacher", "registrar", "school_admin", "admin", "superadmin"] },
   { prefix: "/p-files", allowed: ["p-file", "school_admin", "admin", "superadmin"] },
   { prefix: "/records", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
   { prefix: "/sis", allowed: ["school_admin", "admin", "superadmin"] },

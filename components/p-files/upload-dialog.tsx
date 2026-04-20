@@ -16,6 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -372,13 +373,12 @@ export function UploadDialog({ enroleeNumber, slotKey, label, expires, meta, isR
                 <Label htmlFor={`expiry-${slotKey}`} className="text-[13px] font-medium text-foreground">
                   Expiry date
                 </Label>
-                <Input
+                <DatePicker
                   id={`expiry-${slotKey}`}
-                  type="date"
                   value={expiryDate}
-                  onChange={(e) => setExpiryDate(e.target.value)}
+                  onChange={setExpiryDate}
                   disabled={busy}
-                  className="font-mono tabular-nums"
+                  placeholder="Select expiry date"
                 />
                 <p className="text-[11px] text-muted-foreground">Required for expiring documents (passport, pass).</p>
               </div>

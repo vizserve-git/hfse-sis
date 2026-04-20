@@ -5,7 +5,7 @@ Student Information System for **HFSE International School, Singapore**. It repl
 - **Markbook** — teachers enter raw scores; the server computes quarterly grades, enforces locking with audit trail, and produces printable report cards.
 - **P-Files** — student document repository with revision history (passports, birth certs, medical, parent / guardian passes).
 - **Admissions** — read-only pipeline analytics over the shared admissions tables.
-- **Records** — day-to-day records management (profile, family, stage pipeline, discount codes, document validation) — replaces Directus. Routes live under `/sis/*`.
+- **Records** — day-to-day records management (profile, family, stage pipeline, discount codes, document validation) — replaces Directus. Routes live under `/records/*`; related admin tooling (AY setup, approvers) at `/sis/*`.
 
 One registrar, ~90 students × 4 terms × ~12 subjects. Volume is small; correctness and auditability are not.
 
@@ -31,19 +31,25 @@ hfse-markbook/
 ├── package.json
 ├── next.config.ts
 ├── tsconfig.json
-├── app/                        ← App Router
+├── app/                        ← App Router (one route group per module)
 │   ├── (auth)/login/
-│   ├── (dashboard)/grading/        ← teacher path
-│   ├── (dashboard)/admin/          ← registrar path
-│   ├── (dashboard)/report-cards/
-│   ├── api/                        ← all route handlers
+│   ├── (dashboard)/            ← neutral shell: / (role-redirect + module picker), /account, /admin/admissions
+│   ├── (markbook)/markbook/    ← grading, report-cards, sections, sync-students, change-requests, audit-log
+│   ├── (p-files)/p-files/      ← student document repository + audit log
+│   ├── (records)/records/      ← Records module: students, discount-codes, audit-log
+│   ├── (sis)/sis/              ← SIS Admin hub: AY setup, approver management
+│   ├── (parent)/parent/        ← parent portal SSO landing
+│   ├── api/                    ← all route handlers
 │   ├── globals.css             ← single source of truth for design tokens
 │   └── layout.tsx
 ├── components/
-│   ├── ui/                     ← shadcn primitives + PageShell / PageHeader / Surface
+│   ├── ui/                     ← shadcn primitives + DatePicker + DateTimePicker + PageShell
 │   ├── grading/                ← score-entry-grid, letter-grade-grid, lock-toggle, totals-editor
-│   ├── admin/                  ← teacher-assignments-panel
-│   └── app-sidebar.tsx
+│   ├── admin/                  ← teacher-assignments-panel, publish-window-panel, publication-status
+│   ├── admissions/             ← pipeline + funnel + outdated-applications charts
+│   ├── p-files/                ← completeness-table, upload-dialog, history-dialog
+│   ├── sis/                    ← Records UI + dashboard widgets + SIS admin UI
+│   └── {markbook,parent,p-files,records,sis}-sidebar.tsx + module-switcher.tsx
 ├── lib/
 │   ├── supabase/               ← client / server / service / middleware clients
 │   ├── auth/                   ← role gate, route gate, NAV_BY_ROLE
@@ -53,7 +59,7 @@ hfse-markbook/
 ├── hooks/
 ├── types/
 ├── supabase/
-│   ├── migrations/             ← 001 schema → 005 RLS teacher scoping
+│   ├── migrations/             ← 001 initial schema → 013 approver assignments
 │   └── seed.sql                ← AY2026 reference data
 └── docs/
     ├── context/                ← project-overview, grading system, schema, API routes, design system

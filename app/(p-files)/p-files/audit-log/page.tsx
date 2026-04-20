@@ -11,7 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
-import { AuditLogDataTable, type MergedRow } from '@/app/(dashboard)/admin/audit-log/audit-log-data-table';
+import { AuditLogDataTable, type MergedRow } from '@/app/(markbook)/markbook/audit-log/audit-log-data-table';
 
 export default async function PFilesAuditLogPage() {
   const sessionUser = await getSessionUser();

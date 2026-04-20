@@ -63,7 +63,7 @@ export async function PublicationStatus({ sectionId, terms }: { sectionId: strin
         </CardDescription>
         <CardAction>
           <Link
-            href="/report-cards"
+            href="/markbook/report-cards"
             className="inline-flex items-center gap-1 text-sm font-medium text-brand-indigo-deep underline-offset-4 hover:underline">
             Manage
             <ArrowUpRight className="size-3.5" />

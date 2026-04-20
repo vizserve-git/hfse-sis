@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus, Tag } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
@@ -25,6 +25,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -101,14 +102,24 @@ export function EditDiscountCodeDialog({ ayCode, mode, id, initial, children }: 
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle className="font-serif text-lg font-semibold">
-            {mode === 'create' ? 'New discount code' : 'Edit discount code'}
-          </DialogTitle>
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1.5 text-left">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Discount codes
+              </p>
+              <DialogTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                {mode === 'create' ? 'New discount code' : 'Edit discount code'}
+              </DialogTitle>
+            </div>
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <Tag className="size-4" />
+            </div>
+          </div>
           <DialogDescription>
             {mode === 'create' ? (
               <>
                 Creates a row in{' '}
-                <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
+                <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">
                   ay{ayCode.slice(2)}_discount_codes
                 </code>
                 . The enrolment portal picks it up immediately.
@@ -177,10 +188,10 @@ export function EditDiscountCodeDialog({ ayCode, mode, id, initial, children }: 
                   <FormItem>
                     <FormLabel>Start date</FormLabel>
                     <FormControl>
-                      <Input
-                        type="date"
+                      <DatePicker
                         value={field.value ?? ''}
-                        onChange={(e) => field.onChange(e.target.value === '' ? null : e.target.value)}
+                        onChange={(v) => field.onChange(v === '' ? null : v)}
+                        placeholder="Select start date"
                       />
                     </FormControl>
                     <FormMessage />
@@ -194,10 +205,10 @@ export function EditDiscountCodeDialog({ ayCode, mode, id, initial, children }: 
                   <FormItem>
                     <FormLabel>End date</FormLabel>
                     <FormControl>
-                      <Input
-                        type="date"
+                      <DatePicker
                         value={field.value ?? ''}
-                        onChange={(e) => field.onChange(e.target.value === '' ? null : e.target.value)}
+                        onChange={(v) => field.onChange(v === '' ? null : v)}
+                        placeholder="Select end date"
                       />
                     </FormControl>
                     <FormMessage />
@@ -227,7 +238,7 @@ export function EditDiscountCodeDialog({ ayCode, mode, id, initial, children }: 
             />
 
             <DialogFooter className="gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)} disabled={busy}>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)} disabled={busy}>
                 Cancel
               </Button>
               <Button type="submit" size="sm" disabled={busy}>

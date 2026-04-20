@@ -1,26 +1,29 @@
 "use client";
 
-import { BookOpen, ChevronDown, ChevronUp, FolderOpen, ShieldCheck, Users } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronUp, FolderOpen, Home, ShieldCheck, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const MODULES = [
-  { value: "markbook", label: "Markbook", icon: BookOpen, href: "/" },
+  { value: "markbook", label: "Markbook", icon: BookOpen, href: "/markbook" },
   { value: "p-files", label: "P-Files", icon: FolderOpen, href: "/p-files" },
   { value: "records", label: "Records", icon: Users, href: "/records" },
   { value: "sis", label: "SIS Admin", icon: ShieldCheck, href: "/sis" },
 ] as const;
 
+type ModuleValue = (typeof MODULES)[number]["value"];
+
 type ModuleSwitcherProps = {
-  currentModule: "markbook" | "p-files" | "records" | "sis";
+  currentModule: ModuleValue | null;
   canSwitch: boolean;
 };
 
 export function ModuleSwitcher({ currentModule, canSwitch }: ModuleSwitcherProps) {
   const router = useRouter();
-  const current = MODULES.find((m) => m.value === currentModule)!;
-  const Icon = current.icon;
+  const current = currentModule ? MODULES.find((m) => m.value === currentModule) : null;
+  const Icon = current?.icon ?? Home;
+  const label = current?.label ?? "Home";
 
   if (!canSwitch) {
     return (
@@ -32,7 +35,7 @@ export function ModuleSwitcher({ currentModule, canSwitch }: ModuleSwitcherProps
           <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60">
             HFSE
           </span>
-          <span className="font-serif text-sm font-semibold tracking-tight text-foreground">{current.label}</span>
+          <span className="font-serif text-sm font-semibold tracking-tight text-foreground">{label}</span>
         </div>
       </div>
     );
@@ -46,12 +49,12 @@ export function ModuleSwitcher({ currentModule, canSwitch }: ModuleSwitcherProps
   }
 
   return (
-    <Select value={currentModule} onValueChange={handleChange}>
+    <Select value={currentModule ?? undefined} onValueChange={handleChange}>
       <SelectTrigger className="h-auto w-auto gap-2 rounded-lg border-border/60 bg-card px-2.5 py-1.5 shadow-xs transition-all hover:border-primary/30 hover:shadow-sm focus:ring-1 focus:ring-primary/20 [&>svg]:hidden">
         <div className="flex items-center gap-2">
           <div className="flex flex-col items-start leading-none">
             <span className="font-serif text-sm font-semibold tracking-tight text-foreground">
-              <SelectValue />
+              {currentModule ? <SelectValue /> : label}
             </span>
           </div>
         </div>
