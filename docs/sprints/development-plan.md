@@ -6,7 +6,7 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 
 **Stack:** Next.js 16 (App Router) + Supabase + Vercel. Python/FastAPI/WeasyPrint PDF service from the original plan has been deferred (see Sprint 6 decision note); browser print handles current volume.
 
-## Status snapshot (last updated 2026-04-17, third pass — P-Files pivot + admin permission bumps)
+## Status snapshot (last updated 2026-04-18, fifth pass — SIS Phase 3 spec finalized)
 
 | Sprint | Title | Status |
 |---|---|---|
@@ -30,6 +30,7 @@ Development is split into 6 sprints. Each sprint produces working, testable soft
 | — | P-Files repository pivot + revision history _(2026-04-17)_ | ✅ Done — same-day correction to Sprint 8: P-Files is a repository, not a review queue. Approve/reject moves to the future SIS module. Deleted `PATCH /api/p-files/[enroleeNumber]/status` and `updateDocumentStatus()`; dropped `pfile.approve` / `pfile.reject` from `AuditAction`. New migration `011_p_file_revisions.sql` (service-role-only append-only table). Upload route now archives the current file to `…/<slotKey>/revisions/<iso>.<ext>` via Supabase Storage `move()` before overwriting, captures pre-replacement snapshot (status / expiry / passport number or pass type / optional note / actor). New `GET /api/p-files/[enroleeNumber]/revisions?slotKey=…` + `components/p-files/history-dialog.tsx` surface the history in a shadcn Dialog from each card. Upload dialog gains an optional "Note" textarea only when replacing. Status model simplified — `DocumentStatus` drops `'rejected'`; cards show `On file` / `Pending review` / `Expired` / `Missing` / `N/A`. CLAUDE.md KD #31, #34 updated; new KD #36 + context doc rewrite in `docs/context/12-p-files-module.md`; SIS cross-module contract at `docs/context/13-sis-module.md` flipped to mark SIS as primary writer of `{slotKey}Status`. |
 | — | Admin permission bumps _(2026-04-17)_ | ✅ Done — `admin` promoted from "not much distinguishes it from superadmin" to "full operator." Gains: module switcher (`canSwitch={admin || superadmin}` in both layouts), CSV exports on `/api/admissions/export` + `/api/audit-log/export` + all three `canExport` page flags, read-only P-Files via `ROUTE_ACCESS` + layout + page gates + `GET /api/p-files/[enroleeNumber]/revisions`. P-Files write (upload/replace) stays `['p-file', 'superadmin']`. New `canWrite` prop on `DocumentCard` gates the Upload/Replace button server-side from the session role; HistoryDialog + View file remain visible. Superadmin-exclusive capabilities now reserved for structural / irreversible ops (AY rollover, user/role management, weight config, destructive maintenance) as those UIs land. CLAUDE.md KD #2, #31, #33 updated; `docs/context/12-p-files-module.md` Access section rewritten as three-tier table. |
 | — | Performance pass _(cross-cutting, 2026-04-17)_ | ✅ Done — eliminated `getUser()` network round-trip from all 3 layouts + 12 nested pages via new `getSessionUser()` helper in `lib/supabase/server.ts` (wraps `getClaims()`, returns `{ id, email, role }`). Parallelized query waterfall on grading sheet page. Eliminated double-fetch on P-Files detail page (query now returns `rawDocRow`). Replaced `select('*')` with explicit column list in P-Files dashboard query. Pushed audit log filters to DB via searchParams. Fixed `ScoreEntryGrid` stale closure that caused 550-component re-renders per save (useRef for rows lookup). Hoisted `loadStats` `unstable_cache` wrapper to module scope. Linear O(n) merge of audit log's two pre-sorted arrays replaces concat+sort. Scoped `grade_entries` fetch on `/grading` to visible sheet IDs via `.in()`. Report card API refactored to reuse `buildReportCard` instead of duplicating the query pipeline. Full patterns doc at `docs/context/11-performance-patterns.md`. |
+| 10 | SIS Module (Student Information System) | 🔶 Phases 1–3 done (Phase 3 shipped 2026-04-18: discount code catalogue CRUD with soft-delete, document approve/reject writing `{slotKey}Status` on `ay{YY}_enrolment_documents`, P-Files `DocumentStatus` re-added `'rejected'` render case). Phase 4 (inquiries, blocked on SharePoint creds) pending. See Sprint 10 section below |
 
 ### Cross-cutting improvements backlog
 
@@ -48,6 +49,7 @@ These came up during sprints but were intentionally deferred to keep scope tight
 - **No test framework configured** — no `vitest` / `@testing-library` / `.test.ts` files exist. The `lib/compute/quarterly.ts` build-time self-test is the only automated check. Worth revisiting if a complex feature lands; today, manual happy-path testing per Workflow §3 is the explicit contract.
 - **API routes still use `getUser()` via `requireRole()`** — the 2026-04-17 perf pass migrated all server-component pages off `getUser()` but deferred the API-route equivalent. Not on the nav hot path (pages navigate; API routes are called on action), so the latency impact is lower. Migrate opportunistically if the auth helper gets touched for other reasons.
 - **`.env.local.example` does not yet list `RESEND_API_KEY` / `RESEND_FROM_EMAIL`** — both are documented in `CLAUDE.md` Environment variables but missing from the example file. Add when next editing that file.
+- **Next.js 16 `revalidateTag(tag, profile)` signature** — Next 16 deprecated the single-arg form; the second argument is `'max'` or a `CacheLifeConfig`. SIS PATCH routes (`app/api/sis/students/[enroleeNumber]/{profile,family/[parent],stage/[stageKey]}/route.ts`) use `revalidateTag(`sis:${ayCode}`, 'max')`. No other routes currently call `revalidateTag` — if a legacy route adds cache invalidation, follow this pattern.
 
 **Reference docs:**
 
@@ -639,6 +641,185 @@ Shipped as a post-Sprint 9 bite after UAT feedback. All edits uncommitted; revie
 - [x] **`/grading/[id]` ongoing change-request alert** — server-side fetch of `grade_change_requests` filtered to `status IN ('pending','approved')` on the current sheet (cookie-bound client is fine — migration 009 RLS allows authenticated SELECT). Alert block inserted directly above the entry grid when count > 0: indigo-wash `border-brand-indigo-soft/50 bg-accent/60` container, `MessageSquareWarning` icon, description splits "N pending · M approved, awaiting registrar", link to `/admin/change-requests?sheet_id=<id>` for staff or `/grading/requests` for teachers. Sits visually below the existing lock-status alert so the two don't collide.
 - [x] **Audit log CSV export (superadmin only)** — new route `app/api/audit-log/export/route.ts` gated on `getUserRole() === 'superadmin'`. `?from=YYYY-MM-DD&to=YYYY-MM-DD` required; dates validated and normalized to UTC day-start / day-end. Unions `public.audit_log` + legacy `public.grade_audit_log` inside the window using `createServiceClient()`, serializes via the new shared helper. Columns: `timestamp_utc, source, actor_email, action, entity_type, entity_id, sheet_id, context_json`. Filename: `audit-log-${from}-to-${to}.csv`. UI wiring on `audit-log-data-table.tsx`: date-range popover + `Download` button on the right of the toolbar, anchor-with-`download` attribute (no fetch/blob), disabled until a range is picked, only rendered when `canExport === true` (passed from the server page based on role).
 - [x] **Shared CSV helper `lib/csv.ts`** — `toCsvValue(v)` (RFC-4180 escape: wrap in quotes if comma/quote/newline/CR; double-up internal quotes) and `buildCsv(headers, rows)`. `/api/admissions/export/route.ts` refactored to use it so there's a single source for CSV escaping.
+
+---
+
+## Sprint 10 — SIS Module (Student Information System) 📋 Phased spec
+
+**Goal:** Replace Directus as the day-to-day admin UI for the admissions tables. The markbook already owns the academic half (grading, attendance, report cards, P-Files); Sprint 10 delivers the missing records-surface so admissions staff can stop logging into Directus for student lookup, demographics edits, status pipeline moves, discount management, and document validation.
+
+**Non-goals (Sprint 10):** parent-facing SIS view, SMS/email sequences, timetabling, fee billing. See `docs/context/13-sis-module.md` §"Out of scope".
+
+**Reference docs:**
+
+- `docs/context/13-sis-module.md` — module plan + cross-module data contract + open questions
+- `docs/context/06-admissions-integration.md` — admissions table shapes and ID formats
+- `docs/context/11-performance-patterns.md` — caching, parallel fetch, `getSessionUser()` — apply to every page
+- `lib/supabase/admissions.ts` — existing service-role helpers, reuse for reads
+- `lib/admissions/dashboard.ts` — cached read pattern (`unstable_cache` + tag) to mirror
+
+**Phasing:** four phases, shippable independently. Phase 1 is the only one spec'd in full below — subsequent phases get fleshed out when their predecessor closes and HFSE feedback is in. This keeps scope honest and lets each phase bank UAT learnings.
+
+| Phase | Title | Status |
+|---|---|---|
+| 10.1 | Read-only foundation — list, search, detail tabs | ✅ Done (2026-04-17) |
+| 10.2 | Write — demographics + status pipeline editing | ✅ Done (2026-04-17) |
+| 10.3 | Discounts + document validation | 🕒 Next up |
+| 10.4 | Inquiries + SIS-native analytics | 🕒 Blocked on SharePoint creds (same blocker as Sprint 7 Part B) |
+
+### Phase 1 — Read-only foundation ✅ Done (2026-04-17)
+
+**Scope shipped:** Registrar / admin / superadmin reach `/sis` from the sidebar (or module switcher for admin+). Dashboard shows per-AY summary (total / enrolled / in-pipeline / withdrawn). `/sis/students` renders a TanStack table with search + level/section facets + status tabs + AY dropdown. Cross-AY search (`/api/sis/search`, capped at 50 rows, 300ms debounced) finds returning students by name / `studentNumber` / `enroleeNumber`. Detail page at `/sis/students/[enroleeNumber]` renders 4 tabs (Profile / Family / Enrollment / Documents) with en-SG dates and em-dash fallbacks per answered open questions. Returning students get an "Enrollment history" chip strip matched via `studentNumber` (Hard Rule #4). Documents tab deep-links to P-Files via `/p-files/[enroleeNumber]#slot-{key}` — `DocumentCard` got `id` + `scroll-mt-20` + `target:` styling.
+
+**Infrastructure shipped:**
+
+- [x] Route group `app/(sis)/sis/*` _(mirrors `app/(p-files)/p-files/*`)_
+- [x] `app/(sis)/layout.tsx` with role gate + sticky header + module switcher _(via `getSessionUser()`)_
+- [x] `components/sis-sidebar.tsx` — flat 4-item nav (Dashboard / Students / Discount Codes / Audit Log) stays fixed as AYs accumulate
+- [x] `components/module-switcher.tsx` extended to 3 modules _(Markbook / P-Files / SIS with `Users` icon)_
+- [x] `lib/auth/roles.ts` — `/sis` in `ROUTE_ACCESS`; SIS entry in `registrar` / `admin` / `superadmin` `NAV_BY_ROLE`
+- [x] `lib/sis/queries.ts` — cached helpers (`listStudents`, `getStudentDetail`, `searchStudentsAcrossAY`, `getEnrollmentHistory`, `listDiscountCodes`) with `sis:${ayCode}` tag, 600s TTL
+
+**Pages shipped:**
+
+- [x] `/sis` — dashboard with AY switcher _(via `app/(sis)/sis/page.tsx`)_
+- [x] `/sis/students` — list with cross-AY search box + TanStack table
+- [x] `/sis/students/[enroleeNumber]` — 4-tab detail + enrollment-history chips
+- [x] `/sis/discount-codes` — code catalogue with Active/Expired/Upcoming badges
+- [x] `/sis/audit-log` — plumbing ready, `action LIKE 'sis.%'` filter
+- [x] `/sis/loading.tsx` + per-route `loading.tsx` skeletons
+
+**Shared components shipped:**
+
+- [x] `components/sis/student-data-table.tsx` — follows `grading-data-table.tsx` canonical pattern
+- [x] `components/sis/field-grid.tsx` — null → `—`, boolean → `Yes / No`, date → en-SG
+- [x] `components/sis/status-badge.tsx` — `ApplicationStatusBadge` + `StageStatusBadge` reusing admissions tints
+- [x] `components/sis/cross-ay-search.tsx` — debounced popover with AY badges on matches
+- [x] `components/sis/enrollment-history-chips.tsx` — "Viewing" marker on current AY
+
+**Audit log:**
+
+- [x] `/sis/audit-log` live _(via `app/(sis)/sis/audit-log/page.tsx`)_
+- [x] `/admin/audit-log` excludes both `pfile.%` and `sis.%`
+- Per-view logging — deliberately skipped per answered open question #1
+
+**Performance:**
+
+- [x] `getSessionUser()` on layout + every page
+- [x] All reads wrapped in `unstable_cache` with `sis:${ayCode}` tag
+- [x] Explicit column lists on every admissions `.select()` call
+- [x] Loading skeletons on every route
+- [x] Cross-AY search debounced 300ms client-side, 50 rows max server-side
+
+**Open questions — resolved 2026-04-17:** (1) Per-view audit logging: No. (2) AY scoping: URL-param dropdown. (3) Slug: `enroleeNumber`. (4) Empty fields: em dash. (5) P-Files anchor deep-link: Yes — shipped alongside Phase 1.
+
+### Phase 2 — Write: demographics + status pipeline ✅ Done (2026-04-17)
+
+**Scope shipped:** Three PATCH routes on the admissions tables, all role-gated to `registrar | admin | superadmin`, all audit-logged with per-field diffs, all followed by `revalidateTag(`sis:${ayCode}`, 'max')` so the next render sees fresh data. Three client editors wired into the detail page — one per tab that needs writes.
+
+**API routes:**
+
+- [x] `PATCH /api/sis/students/[enroleeNumber]/profile?ay=` — demographics on the applications row _(validates via `ProfileUpdateSchema.safeParse`)_
+- [x] `PATCH /api/sis/students/[enroleeNumber]/family/[parent]?ay=` — father / mother / guardian slots on the applications row _(schema dispatched per slot)_
+- [x] `PATCH /api/sis/students/[enroleeNumber]/stage/[stageKey]?ay=` — one of 9 pipeline stages on the status row, auto-stamping `<stage>UpdatedDate` + `<stage>UpdatedBy`
+
+**Schemas + audit:**
+
+- [x] `lib/schemas/sis.ts` — `ProfileUpdateSchema` (50+ fields), `FatherUpdateSchema` / `MotherUpdateSchema` / `GuardianUpdateSchema`, `StageUpdateSchema` + `STAGE_COLUMN_MAP` + `STAGE_STATUS_OPTIONS` per stage
+- [x] `lib/audit/log-action.ts` — new actions `sis.profile.update`, `sis.family.update`, `sis.stage.update`; new entity types `enrolment_application`, `enrolment_status`
+- [x] Per-field diff on every write (`context.changes: [{ field, from, to }]`)
+
+**Client editors:**
+
+- [x] `components/sis/edit-stage-dialog.tsx` — shadcn Dialog with canonical status dropdown per stage + "Other…" free-text fallback + remarks + stage-specific extras (invoice / schedule / dates / grades / class fields)
+- [x] `components/sis/edit-profile-sheet.tsx` — shadcn Sheet with 5 grouped sections (Identity / Travel docs / Contact / Application preferences / Discount slots), schema-driven via SECTIONS config
+- [x] `components/sis/edit-family-sheet.tsx` — single component parameterized by `parent: 'father' | 'mother' | 'guardian'`
+
+**Wiring + hard rule preservation:**
+
+- [x] "Edit profile" button in Profile tab header
+- [x] "Edit" button on each parent card (Family tab)
+- [x] "Edit" button on each of the 9 stages (Enrollment tab)
+- [x] Stable IDs (`enroleeNumber`, `studentNumber`) not in any schema — routes 400 if they're sent
+- [x] Next.js 16 cache API: `revalidateTag(tag, 'max')` (Next 16 requires the second `profile` arg; single-arg is deprecated)
+
+### Phase 3 — Discount code management + document validation ✅ Done (2026-04-18)
+
+**Scope clarification (2026-04-18):** Per-student discount *grants* are handled entirely by the enrolment portal (which writes the `discount1` / `discount2` / `discount3` slot columns on `ay{YY}_enrolment_applications` directly). SIS's discount responsibility is narrower than originally scoped: **manage the code catalogue only** — no grants ledger, no `enrolment_discounts` table. The Phase 2 `ProfileUpdateSchema` already edits the 3 slot columns on the applications row, which is sufficient.
+
+#### (a) Discount code catalogue CRUD — `ay{YY}_discount_codes`
+
+Schema (confirmed 2026-04-18):
+
+```sql
+ay{YY}_discount_codes (
+  id           bigint identity,
+  created_at   timestamptz default now(),
+  discountCode text,
+  startDate    date,
+  endDate      date,
+  details      text,
+  enroleeType  varchar      -- 'New' | 'Current' | 'Both' | 'VizSchool New' | 'VizSchool Current' | 'VizSchool Both'
+)
+```
+
+`enroleeType` is an **eligibility filter** consumed by the enrolment portal when matching a student to available codes — not descriptive metadata. `'New'` = no prior enrolment record; `'Current'` = existing record re-enrolling to a new grade level; `'Both'` = either; `VizSchool *` = the equivalent for the VizSchool admissions stream.
+
+API routes:
+
+- [x] `POST /api/sis/discount-codes?ay=AY2026` — create a code on the AY specified in the query param; no cross-AY creation (creating in the AY2026 view writes to `ay2026_discount_codes`, full stop)
+- [x] `PATCH /api/sis/discount-codes/[id]?ay=AY2026&op=expire?` — edit any column; `?op=expire` flips the audit action to `sis.discount_code.expire` so soft-deletes show up distinctly
+- [x] **"Delete" is soft** — client hits the PATCH route with `endDate = today` and `?op=expire`. No `DELETE` verb. Rationale: deleted codes may still be referenced by the `discount1…3` slot text on student applications, and the enrolment portal treats `endDate < today` as inactive. A hard delete would orphan those references.
+- [x] All three routes gate to `registrar | admin | superadmin` via `requireRole`, call `revalidateTag(`sis:${ayCode}`, 'max')` on success.
+
+Schemas + audit:
+
+- [x] `lib/schemas/sis.ts` — `DiscountCodeSchema` (zod) with the 6-value `enroleeType` enum, `startDate <= endDate` refinement, `discountCode` required + trimmed. Plus `DiscountCodePatchSchema` (partial, no refine — merge-validated in the route).
+- [x] `lib/audit/log-action.ts` — new actions `sis.discount_code.create`, `sis.discount_code.update`, `sis.discount_code.expire`; new entity type `discount_code`. Per-field diff on update (same pattern as `sis.profile.update`).
+
+Client:
+
+- [x] `components/sis/edit-discount-code-dialog.tsx` — single shadcn Dialog with `mode: 'create' | 'edit'` prop, shared by the header "New code" button and each row's Edit action. RHF + zod resolver per KD #20. Fields: `discountCode`, `enroleeType`, `startDate` + `endDate` (native date inputs — matches Phase 2 pattern), `details` (textarea).
+- [x] `components/sis/discount-code-row-actions.tsx` — DropdownMenu with Edit + Expire; Expire item hides when already expired.
+- [x] `components/sis/discount-code-status-badge.tsx` — extracted Active / Expired / Upcoming pill (was inline on the page); also exports `isExpired(endDate)` for the row actions.
+- [x] `/sis/discount-codes` — "New code" button in the page header; row-level actions column.
+- [x] Confirmation via shadcn `AlertDialog` on Expire (per KD #21).
+
+#### (b) Document validation on the Documents tab
+
+Per the cross-module contract in `docs/context/13-sis-module.md`, SIS is the sole writer of `{slotKey}Status = 'Valid' | 'Rejected'` post-upload. P-Files sets `'Valid'` on staff upload (KD #34) and never writes `'Rejected'`.
+
+API routes:
+
+- [x] `PATCH /api/sis/students/[enroleeNumber]/document/[slotKey]?ay=` — body validated via `DocumentValidationSchema` (discriminated union: `{ status: 'Valid' }` or `{ status: 'Rejected', rejectionReason: string(min 20, max 2000) }`). Writes `{slotKey}Status` on `ay{YY}_enrolment_documents` (the cross-module contract's SIS-write row). `rejectionReason` is stored in the `audit_log.context` only — no schema column. `slotKey` is allowlisted against `DOCUMENT_SLOTS` from `lib/sis/queries.ts` so arbitrary `${x}Status` writes are impossible.
+- [x] `requireRole('registrar', 'admin', 'superadmin')`. Same `revalidateTag` pattern.
+
+Schemas + audit:
+
+- [x] `lib/schemas/sis.ts` — `DocumentValidationSchema` (discriminated union).
+- [x] New actions `sis.document.approve`, `sis.document.reject`; entity type `enrolment_document`. Audit context captures `slot_key`, `prior_status`, `new_status`, and `rejection_reason` (on reject).
+
+Client:
+
+- [x] `components/sis/document-validation-actions.tsx` — Approve + Reject buttons; Reject opens shadcn Dialog with RHF-validated rejection reason (min 20 chars).
+- [x] Wired into the inline `DocumentsTab` in `/sis/students/[enroleeNumber]/page.tsx` alongside the existing View file / Open in P-Files links.
+- [x] P-Files `components/p-files/document-card.tsx` + `lib/p-files/document-config.ts` — re-introduced `'rejected'` case to `DocumentStatus` union + `resolveStatus()` + `STATUS_STRIP` + `StatusBadge`. Rejection precedence: rejected trumps expired (a rejected file needs replacement regardless of expiry).
+
+#### Docs updates folded into this sprint
+
+- [x] `docs/sprints/development-plan.md` — Phase 3 section marked done.
+- [x] `docs/context/13-sis-module.md` — cross-module contract row for `enrolment_discounts` removed; open question on discount schema resolved; practical build sketch updated to drop the discounts tab.
+- [x] `CLAUDE.md` KD #37 — updated to reflect Phases 1–3 behavior.
+
+#### Deferred to Phase 3.1 if needed
+
+- Persisting `rejectionReason` to a schema column (currently audit-only)
+- Bulk approve/reject on the Documents tab
+- Filtering the code catalogue by `enroleeType` in the list view
+
+### Phase 4 — Inquiries + SIS-native analytics _(blocked)_
+
+**Blockers (same as Sprint 7 Part B):** SharePoint site ID + Azure AD credentials + column names. Headline scope when unblocked: new `enrolment_inquiries` table + one-way SharePoint→Supabase sync + inquiry→application conversion funnel inside `/sis`.
 
 ---
 

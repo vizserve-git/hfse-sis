@@ -1,6 +1,6 @@
 # SIS Module (Student Information System)
 
-> **Status:** 📋 TODO — discussion phase. Not yet scoped for a sprint. Details are deliberately open; this doc exists to anchor a planning conversation, not to dictate the build.
+> **Status:** 🔶 Phases 1–2 shipped (2026-04-17). Phase 3 spec finalized 2026-04-18 — see `docs/sprints/development-plan.md` §Sprint 10 Phase 3. Phase 4 (inquiries) blocked on SharePoint creds. The sections below describe the module's intent and cross-module contract; for up-to-date shipped scope read the sprint plan.
 
 ## Why this doc exists
 
@@ -15,7 +15,7 @@ A comprehensive records surface for admissions and registrar staff. Primary jobs
 - **Find a student.** Search by name, student number, enrolee number, section, level.
 - **View the full record.** Demographics, family contacts, siblings, enrollment status, documents, discounts, medical/allergy flags, inquiry history.
 - **Edit the record.** Update demographics, parent emails, class assignment, withdrawal status, etc.
-- **Manage discounts.** Grant/revoke scholarships, sibling discounts, staff discounts, etc. (requires new `enrolment_discounts` table — not yet in the schema.)
+- **Manage the discount code catalogue.** Create / edit / expire codes on `ay{YY}_discount_codes`. Per-student *grants* are handled by the enrolment portal, which writes the `discount1` / `discount2` / `discount3` slot columns on `ay{YY}_enrolment_applications` directly — SIS only edits those slot strings via the Phase 2 profile sheet; there is no separate grants ledger.
 - **Track inquiries.** SharePoint-sourced leads that precede application, plus conversion analytics (inquiry → applied → enrolled).
 - **Replace Directus** as the day-to-day admissions tool. No data migration — the tables are already in Supabase.
 
@@ -67,8 +67,11 @@ Three modules share the admissions tables. The rule: **each table has one primar
 | `ay{YY}_enrolment_documents.{slotKey}Status` | **Write** (approve / reject — validation call) | Write on staff upload (sets to `'Valid'`) | — |
 | `ay{YY}_enrolment_documents.{slotKey}Expiry` | Read / edit | **Write** (from upload dialog metadata) | — |
 | `p_file_revisions` | Read (historical context per student) | **Write** (appended on replace, Key Decision #36) | — |
-| `enrolment_discounts` *(new)* | **Write** (exclusive) | — | — |
+| `ay{YY}_discount_codes` | **Write** (exclusive — Phase 3 catalogue CRUD) | — | — |
+| `ay{YY}_enrolment_applications.discount{1,2,3}` | Write (via Phase 2 profile sheet) | — | Read |
 | Inquiries *(source TBD)* | **Write** (exclusive) | — | — |
+
+*Per-student discount grants are written by the external enrolment portal, not by SIS. SIS only manages the code catalogue and edits the 3 slot strings on the student's application row.*
 
 Coordination notes:
 - **Document validation (approve/reject) is SIS's job, not P-Files's.** P-Files is a repository — it shows files, archives prior versions, and never mutates a status to `Rejected`. SIS is the sole writer of "rejected" and is the intended surface to send a document back to the parent for re-upload.
@@ -81,7 +84,7 @@ Coordination notes:
 These need answers before a sprint opens:
 
 - [ ] **Directus feature parity** — what exactly does the admissions team do in Directus today? List every workflow so the MVP scope is grounded, not invented. (Student edit? Discount grant? Bulk status update? Reports?)
-- [ ] **`enrolment_discounts` schema** — what columns? Per-student rows? Discount type enum? Amount vs percentage? Validity window? Approval workflow? Who grants? Who revokes? Audit trail?
+- [x] ~~**`enrolment_discounts` schema**~~ — **Resolved 2026-04-18:** no new table. Per-student grants are written by the enrolment portal into `ay{YY}_enrolment_applications.discount{1,2,3}` (text slots referencing catalogue `discountCode`). SIS manages the `ay{YY}_discount_codes` catalogue only. `enroleeType` is a 6-value eligibility enum: `New` / `Current` / `Both` / `VizSchool New` / `VizSchool Current` / `VizSchool Both`.
 - [ ] **Inquiries data source** — SharePoint list, API, CSV export, or something else? Credentials still blocked (same blocker as Sprint 7 Part B). Can a `enrolment_inquiries` table in Supabase serve as the SIS-native store, with SharePoint → Supabase as a one-way sync?
 - [ ] **Role model** — option (a) reuse existing roles, or option (b) add a new `sis` role? If (b), who assigns it and via what UI?
 - [ ] **Student lifecycle edits** — who can change `applicationStatus`? `classSection`? Should section reassignment trigger a grade-entry migration, or is that a manual process?
@@ -107,10 +110,10 @@ Just to anchor the discussion — not a commitment:
 1. Add `sis` route group: `app/(sis)/sis/*` with own layout + sidebar. Pattern-match `(p-files)`.
 2. Module switcher (`components/module-switcher.tsx`) extends to 3 options. Already a shadcn `Select` — 3 items is fine.
 3. Hero page: `/sis` = student list with search, AY switcher, level/section filters, `@tanstack/react-table` (reuse the existing patterns).
-4. Detail page: `/sis/[studentNumber]` with tabs — Profile / Family / Enrollment / Discounts / Documents (read-only summary, link to P-Files) / Inquiry history.
+4. Detail page: `/sis/students/[enroleeNumber]` with tabs — Profile / Family / Enrollment / Documents (with approve/reject in Phase 3; links to P-Files for the file viewer). No separate Discounts tab — the catalogue lives at `/sis/discount-codes`, grants live in the Profile sheet's Discount slots section.
 5. Write forms: RHF + zod + shadcn `Form` per existing convention (Key Decision #20). Schemas in `lib/schemas/`.
-6. Audit log: new actions (`sis.student.update`, `sis.discount.grant`, etc.), new entity type (`student_record`?), written via existing `logAction()`. Route `/sis/audit-log` with a module-scoped view (same split pattern as `/p-files/audit-log`).
-7. Migration SQL for `enrolment_discounts` + any inquiries table. Start a new numbered migration file in `supabase/migrations/`.
+6. Audit log: new actions (`sis.profile.update`, `sis.family.update`, `sis.stage.update`, `sis.discount_code.*`, `sis.document.{approve,reject}`), new entity types (`enrolment_application`, `enrolment_status`, `discount_code`, `enrolment_document`), written via existing `logAction()`. Route `/sis/audit-log` with a module-scoped view (same split pattern as `/p-files/audit-log`).
+7. Migration SQL is only needed if Phase 4 inquiries land — no schema changes for Phases 1–3.
 
 ## References
 

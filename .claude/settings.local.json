@@ -59,7 +59,11 @@
       "Bash(git commit -m ' *)",
       "Bash(node -e \"const m = require\\('next/cache'\\); console.log\\(m.revalidateTag?.toString\\(\\)?.slice\\(0,200\\)\\)\")",
       "Bash(rm \"C:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-markbook/app/api/p-files/[enroleeNumber]/status/route.ts\")",
-      "Bash(rmdir \"C:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-markbook/app/api/p-files/[enroleeNumber]/status\")"
+      "Bash(rmdir \"C:/Users/Ace/OneDrive - HFSE International School/Desktop/hfse-markbook/app/api/p-files/[enroleeNumber]/status\")",
+      "Bash(git status *)"
+    ],
+    "deny": [
+      "Read(./.env.local)"
     ]
   },
   "enabledMcpjsonServers": [

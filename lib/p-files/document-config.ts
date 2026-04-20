@@ -65,11 +65,11 @@ export const GROUP_LABELS: Record<DocumentGroup, string> = {
   parent: 'Parent / Guardian Documents',
 };
 
-// P-Files is a repository, not a review queue. The `rejected` state is
-// intentionally absent — document validation lives in the future SIS
-// module. `uploaded` remains as "Pending review" for parent self-serve
-// uploads whose status column has not yet been validated by SIS.
-export type DocumentStatus = 'valid' | 'uploaded' | 'expired' | 'missing' | 'na';
+// P-Files is a repository, not a review queue — but it does render every
+// status SIS writes. SIS is the sole writer of `'rejected'` per the
+// cross-module contract (Phase 3). `uploaded` is "Pending review" for
+// parent self-serve uploads awaiting SIS validation.
+export type DocumentStatus = 'valid' | 'uploaded' | 'expired' | 'missing' | 'na' | 'rejected';
 
 /** Resolve the effective display status for a document slot. */
 export function resolveStatus(
@@ -81,6 +81,10 @@ export function resolveStatus(
   if (!url && !rawStatus) return 'missing';
 
   const s = (rawStatus ?? '').toLowerCase().trim();
+
+  // Rejection is a deliberate SIS call — trumps expiry. A parent needs
+  // to replace the file regardless of whether it's also out of date.
+  if (s === 'rejected') return 'rejected';
 
   // For expiring docs, check if expired
   if (expires && expiryDate) {

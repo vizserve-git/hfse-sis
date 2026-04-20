@@ -23,7 +23,15 @@ export type AuditAction =
   | 'grade_change_cancelled'
   | 'grade_change_applied'
   | 'grade_correction'
-  | 'pfile.upload';
+  | 'pfile.upload'
+  | 'sis.profile.update'
+  | 'sis.family.update'
+  | 'sis.stage.update'
+  | 'sis.discount_code.create'
+  | 'sis.discount_code.update'
+  | 'sis.discount_code.expire'
+  | 'sis.document.approve'
+  | 'sis.document.reject';
 
 export type AuditEntityType =
   | 'grading_sheet'
@@ -35,7 +43,10 @@ export type AuditEntityType =
   | 'report_card_publication'
   | 'sync_batch'
   | 'grade_change_request'
-  | 'enrolment_document';
+  | 'enrolment_document'
+  | 'enrolment_application'
+  | 'enrolment_status'
+  | 'discount_code';
 
 type LogActionParams = {
   service: SupabaseClient;

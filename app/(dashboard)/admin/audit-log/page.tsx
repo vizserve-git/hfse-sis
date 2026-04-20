@@ -26,7 +26,8 @@ export default async function AuditLogPage({
   let newQ = supabase
     .from('audit_log')
     .select('id, actor_email, action, entity_type, entity_id, context, created_at')
-    .not('action', 'like', 'pfile.%');
+    .not('action', 'like', 'pfile.%')
+    .not('action', 'like', 'sis.%');
   let legacyQ = supabase
     .from('grade_audit_log')
     .select('*');

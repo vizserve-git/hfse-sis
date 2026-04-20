@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle2, Clock, Download, Upload } from 'lucide-react';
+import { CheckCircle2, Clock, Download, Upload, XCircle } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ const STATUS_STRIP: Record<DocumentStatus, string> = {
   valid: 'bg-brand-mint',
   uploaded: 'bg-brand-amber',
   expired: 'bg-destructive',
+  rejected: 'bg-destructive',
   missing: 'bg-border',
   na: 'bg-border',
 };
@@ -47,6 +48,12 @@ function StatusBadge({ status }: { status: DocumentStatus }) {
       return (
         <Badge variant="outline" className="h-6 gap-1 border-destructive/30 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive">
           <Clock className="size-3" /> Expired
+        </Badge>
+      );
+    case 'rejected':
+      return (
+        <Badge variant="outline" className="h-6 gap-1 border-destructive/30 bg-destructive/10 px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive">
+          <XCircle className="size-3" /> Rejected
         </Badge>
       );
     case 'missing':
@@ -92,7 +99,10 @@ export function DocumentCard({
   const canUpload = canWrite && status !== 'na';
 
   return (
-    <div className="group overflow-hidden rounded-xl border border-border/60 bg-card shadow-xs transition-shadow hover:shadow-sm">
+    <div
+      id={`slot-${slotKey}`}
+      className="group scroll-mt-20 overflow-hidden rounded-xl border border-border/60 bg-card shadow-xs transition-shadow hover:shadow-sm target:ring-2 target:ring-brand-indigo/40"
+    >
       {/* Status color strip */}
       <div className={`h-1 ${STATUS_STRIP[status]}`} />
 

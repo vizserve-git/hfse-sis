@@ -45,6 +45,7 @@ export const NAV_BY_ROLE: Record<Role, NavSection[]> = {
       label: 'Admin',
       items: [
         { href: '/admin/admissions', label: 'Admissions Dashboard' },
+        { href: '/sis', label: 'SIS' },
         { href: '/admin/change-requests', label: 'Change Requests', badgeKey: 'changeRequests' },
         { href: '/admin/audit-log', label: 'Audit Log' },
       ],
@@ -59,7 +60,10 @@ export const NAV_BY_ROLE: Record<Role, NavSection[]> = {
     { items: [{ href: '/report-cards', label: 'Report Cards' }] },
     {
       label: 'Admissions',
-      items: [{ href: '/admin/admissions', label: 'Pipeline Dashboard' }],
+      items: [
+        { href: '/admin/admissions', label: 'Pipeline Dashboard' },
+        { href: '/sis', label: 'SIS' },
+      ],
     },
     {
       label: 'Admin',
@@ -91,7 +95,10 @@ export const NAV_BY_ROLE: Record<Role, NavSection[]> = {
     { items: [{ href: '/report-cards', label: 'Report Cards' }] },
     {
       label: 'Admissions',
-      items: [{ href: '/admin/admissions', label: 'Pipeline Dashboard' }],
+      items: [
+        { href: '/admin/admissions', label: 'Pipeline Dashboard' },
+        { href: '/sis', label: 'SIS' },
+      ],
     },
     {
       label: 'Admin',
@@ -109,6 +116,7 @@ export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   { prefix: '/report-cards', allowed: ['registrar', 'admin', 'superadmin'] },
   { prefix: '/grading',      allowed: ['teacher', 'registrar', 'admin', 'superadmin'] },
   { prefix: '/p-files',      allowed: ['p-file', 'admin', 'superadmin'] },
+  { prefix: '/sis',          allowed: ['registrar', 'admin', 'superadmin'] },
 ];
 
 export function getUserRole(user: User | null | undefined): Role | null {
