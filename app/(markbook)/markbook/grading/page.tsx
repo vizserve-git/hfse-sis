@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { GradingDataTable, type GradingSheetRow } from './grading-data-table';
+import { BulkCreateSheetsButton } from '@/components/markbook/bulk-create-sheets-button';
 
 type LevelLite = { id: string; code: string; label: string; level_type: 'primary' | 'secondary' };
 type SubjectLite = { id: string; code: string; name: string; is_examinable: boolean };
@@ -48,6 +49,13 @@ export default async function GradingListPage() {
   const role = getRoleFromClaims(claims);
   const canCreate = role === 'registrar' || role === 'admin' || role === 'superadmin';
 
+  // Current AY — used by the registrar-only "Create all sheets" bulk action.
+  const ayPromise = supabase
+    .from('academic_years')
+    .select('id, ay_code')
+    .eq('is_current', true)
+    .maybeSingle();
+
   // Three independent, RLS-scoped queries run in parallel. All are
   // authoritative per-request (no caching) because the rows each teacher can
   // see differ — but the round-trips overlap instead of stacking.
@@ -59,8 +67,8 @@ export default async function GradingListPage() {
         .eq('role', 'form_adviser')
     : Promise.resolve({ data: [] as unknown });
 
-  // Fetch sheets + advisor in parallel, then scope blanks query to visible sheet IDs
-  const [sheetsRes, advisorRes] = await Promise.all([
+  // Fetch sheets + advisor + current AY in parallel.
+  const [sheetsRes, advisorRes, ayRes] = await Promise.all([
     supabase
       .from('grading_sheets')
       .select(
@@ -70,7 +78,9 @@ export default async function GradingListPage() {
          section:sections(id, name, level:levels(id, code, label, level_type))`,
       ),
     advisorPromise,
+    ayPromise,
   ]);
+  const currentAy = (ayRes.data as { id: string; ay_code: string } | null) ?? null;
 
   const sheets = sheetsRes.data;
   const sheetIds = (sheets ?? []).map((s: { id: string }) => s.id);
@@ -201,12 +211,17 @@ export default async function GradingListPage() {
           </p>
         </div>
         {canCreate && (
-          <Button asChild>
-            <Link href="/markbook/grading/new">
-              <Plus className="h-4 w-4" />
-              New grading sheet
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {currentAy && (
+              <BulkCreateSheetsButton ayId={currentAy.id} ayCode={currentAy.ay_code} />
+            )}
+            <Button asChild>
+              <Link href="/markbook/grading/new">
+                <Plus className="h-4 w-4" />
+                New grading sheet
+              </Link>
+            </Button>
+          </div>
         )}
       </header>
 

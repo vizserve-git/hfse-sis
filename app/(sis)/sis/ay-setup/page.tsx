@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowLeft, CalendarRange, RefreshCw, Trash2 } from 'lucide-react';
+import { ArrowLeft, CalendarRange, RefreshCw, Trash2, UserCheck } from 'lucide-react';
 
 import { AyDeleteDialog } from '@/components/sis/ay-delete-dialog';
 import { NewAyButton } from '@/components/sis/ay-setup-wizard';
 import { AySwitchActiveDialog } from '@/components/sis/ay-switch-active-dialog';
+import { TermDatesEditor } from '@/components/sis/term-dates-editor';
+import { CopyTeacherAssignmentsDialog } from '@/components/sis/copy-teacher-assignments-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +16,9 @@ import {
   checkAyEmpty,
   getCopyForwardPreview,
   listAcademicYears,
+  listTermsByAy,
   type AcademicYearListItem,
+  type TermRow,
 } from '@/lib/sis/ay-setup/queries';
 import { getSessionUser } from '@/lib/supabase/server';
 
@@ -28,6 +32,7 @@ export default async function AySetupPage() {
   }
 
   const ays = await listAcademicYears();
+  const termsByAy = await listTermsByAy();
   const activeAyCode = ays.find((a) => a.is_current)?.ay_code ?? null;
 
   // Preview for the "New AY" wizard. Uses a throwaway code so the query
@@ -111,6 +116,10 @@ export default async function AySetupPage() {
                     activeAyCode={activeAyCode}
                     role={role}
                     blockers={blockersByAy[ay.ay_code] ?? []}
+                    terms={termsByAy[ay.id] ?? []}
+                    otherAys={ays
+                      .filter((o) => o.ay_code !== ay.ay_code)
+                      .map((o) => ({ ayCode: o.ay_code, label: o.label }))}
                   />
                 ))
               )}
@@ -152,12 +161,25 @@ function AyRow({
   activeAyCode,
   role,
   blockers,
+  terms,
+  otherAys,
 }: {
   ay: AcademicYearListItem;
   activeAyCode: string | null;
   role: 'school_admin' | 'admin' | 'superadmin';
   blockers: string[];
+  terms: TermRow[];
+  otherAys: Array<{ ayCode: string; label: string }>;
 }) {
+  const termsWithDates = terms.filter((t) => t.start_date && t.end_date).length;
+  const termsTotal = terms.length;
+  const datesStatus =
+    termsTotal === 0
+      ? 'No terms'
+      : termsWithDates === termsTotal
+      ? `${termsWithDates}/${termsTotal} set`
+      : `${termsWithDates}/${termsTotal} set`;
+  const datesIncomplete = termsTotal > 0 && termsWithDates < termsTotal;
   return (
     <TableRow>
       <TableCell className="font-mono text-xs font-semibold uppercase tracking-wider text-foreground">
@@ -183,6 +205,34 @@ function AyRow({
       </TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-2">
+          <TermDatesEditor ayCode={ay.ay_code} ayLabel={ay.label} terms={terms}>
+            <Button
+              size="sm"
+              variant="outline"
+              className={
+                'h-7 text-xs ' +
+                (datesIncomplete
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-200'
+                  : '')
+              }
+              title={datesIncomplete ? `Term dates: ${datesStatus}` : `Term dates (${datesStatus})`}
+            >
+              <CalendarRange className="mr-1 size-3" />
+              Dates
+              <span className="ml-1 font-mono text-[10px] tabular-nums">{datesStatus}</span>
+            </Button>
+          </TermDatesEditor>
+          {otherAys.length > 0 && (
+            <CopyTeacherAssignmentsDialog
+              targetAyCode={ay.ay_code}
+              sourceOptions={otherAys}
+            >
+              <Button size="sm" variant="outline" className="h-7 text-xs" title="Copy teachers from another AY">
+                <UserCheck className="mr-1 size-3" />
+                Copy teachers
+              </Button>
+            </CopyTeacherAssignmentsDialog>
+          )}
           {!ay.is_current && (
             <AySwitchActiveDialog targetAyCode={ay.ay_code} currentAyCode={activeAyCode}>
               <Button size="sm" variant="outline" className="h-7 text-xs">

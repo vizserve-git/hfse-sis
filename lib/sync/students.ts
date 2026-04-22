@@ -3,6 +3,8 @@
 // returns a plan of inserts/updates/withdrawals and errors.
 // Kept pure so it's testable without hitting either database.
 
+import type { SupabaseClient } from '@supabase/supabase-js';
+
 import type { AdmissionsRow } from '@/lib/supabase/admissions';
 import { normalizeSectionName } from '@/lib/sync/section-normalizer';
 import { normalizeLevelLabel } from '@/lib/sync/level-normalizer';
@@ -283,4 +285,238 @@ export function buildSyncPlan(
 
   plan.stats.errors = plan.errors.length;
   return plan;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Single-student sync (Sprint 13.3)
+//
+// Called from the SIS stage PATCH when class.status flips to 'Assigned'.
+// Builds a narrow snapshot scoped to the target student + materialises their
+// grading-schema rows immediately (no need to run the bulk sync).
+//
+// Deliberately narrow: does NOT detect withdrawals from other sections.
+// If a student moves from P1 Patience to P1 Obedience mid-year via admissions,
+// this helper enrols them in Obedience but leaves the Patience row untouched.
+// Bulk sync (registrar, /markbook/sync-students) handles that reconciliation.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type SyncOneResult = {
+  ok: boolean;
+  change: 'inserted' | 'updated' | 'enrolled' | 'reactivated' | 'unchanged' | 'skipped';
+  reason?: string;
+  error?: string;
+};
+
+export async function syncOneStudent(
+  service: SupabaseClient,
+  admissions: SupabaseClient,
+  enroleeNumber: string,
+  ayCode: string,
+): Promise<SyncOneResult> {
+  try {
+    const year = ayCode.replace(/^AY/i, '').toLowerCase();
+    const appsTable = `ay${year}_enrolment_applications`;
+    const statusTable = `ay${year}_enrolment_status`;
+
+    // 1. Fetch the admissions pair for this enrolee.
+    const [appRes, statusRes] = await Promise.all([
+      admissions
+        .from(appsTable)
+        .select('enroleeNumber, studentNumber, lastName, firstName, middleName')
+        .eq('enroleeNumber', enroleeNumber)
+        .maybeSingle(),
+      admissions
+        .from(statusTable)
+        .select('enroleeNumber, classLevel, classSection, classAY, applicationStatus')
+        .eq('enroleeNumber', enroleeNumber)
+        .maybeSingle(),
+    ]);
+    if (appRes.error) {
+      return { ok: false, change: 'skipped', error: `apps fetch: ${appRes.error.message}` };
+    }
+    if (statusRes.error) {
+      return { ok: false, change: 'skipped', error: `status fetch: ${statusRes.error.message}` };
+    }
+    if (!appRes.data || !statusRes.data) {
+      return { ok: false, change: 'skipped', reason: 'admissions rows missing' };
+    }
+    const app = appRes.data as {
+      studentNumber: string | null;
+      lastName: string | null;
+      firstName: string | null;
+      middleName: string | null;
+    };
+    const status = statusRes.data as {
+      classLevel: string | null;
+      classSection: string | null;
+      applicationStatus: string | null;
+    };
+
+    if (!app.studentNumber) return { ok: false, change: 'skipped', reason: 'no studentNumber' };
+    if (!status.classSection || !status.classLevel) {
+      return { ok: false, change: 'skipped', reason: 'missing classLevel or classSection' };
+    }
+    if (status.applicationStatus === 'Cancelled' || status.applicationStatus === 'Withdrawn') {
+      return { ok: false, change: 'skipped', reason: `application is ${status.applicationStatus}` };
+    }
+
+    const admissionsRow: AdmissionsRow = {
+      student_number: app.studentNumber,
+      last_name: app.lastName,
+      first_name: app.firstName,
+      middle_name: app.middleName,
+      class_level: status.classLevel,
+      class_section: status.classSection,
+      class_ay: ayCode,
+    };
+
+    // 2. Load a minimal grading snapshot in parallel. The three queries are
+    //    independent (levels + student + sections-joined-to-ay), so firing
+    //    them together cuts round-trips from ~4 sequential to 1 Promise.all
+    //    + 1 follow-up for enrolments (Sprint 14.5 fix).
+    const [levelsRes, studentRes, sectionsRes] = await Promise.all([
+      service.from('levels').select('id, label'),
+      service
+        .from('students')
+        .select('id, student_number, last_name, first_name, middle_name')
+        .eq('student_number', app.studentNumber)
+        .maybeSingle(),
+      service
+        .from('sections')
+        .select('id, level_id, name, academic_year:academic_years!inner(ay_code)')
+        .eq('academic_year.ay_code', ayCode),
+    ]);
+
+    type SectionJoin = {
+      id: string;
+      level_id: string;
+      name: string;
+      academic_year: { ay_code: string } | { ay_code: string }[] | null;
+    };
+    const sections = ((sectionsRes.data ?? []) as SectionJoin[]).map((s) => ({
+      id: s.id,
+      level_id: s.level_id,
+      name: s.name,
+    }));
+    const levels = (levelsRes.data ?? []) as Array<{ id: string; label: string }>;
+
+    const studentRow = studentRes.data as null | {
+      id: string;
+      student_number: string;
+      last_name: string;
+      first_name: string;
+      middle_name: string | null;
+    };
+
+    // Enrolments for this specific student (across all sections in this AY)
+    // so a stale row in another section doesn't produce a phantom insert.
+    let enrollments: EnrollmentRow[] = [];
+    if (studentRow) {
+      const sectionIds = sections.map((s) => s.id);
+      if (sectionIds.length > 0) {
+        const enrRes = await service
+          .from('section_students')
+          .select('id, section_id, student_id, index_number, enrollment_status')
+          .eq('student_id', studentRow.id)
+          .in('section_id', sectionIds);
+        enrollments = ((enrRes.data ?? []) as EnrollmentRow[]);
+      }
+    }
+
+    const snapshot: GradingSnapshot = {
+      levels,
+      sections,
+      students: studentRow ? [studentRow] : [],
+      enrollments,
+    };
+
+    const plan = buildSyncPlan([admissionsRow], snapshot);
+
+    if (plan.errors.length > 0) {
+      return { ok: false, change: 'skipped', reason: plan.errors[0].reason };
+    }
+
+    // 3. Commit. Same shape as /api/students/sync but narrowed to this one row.
+    const inserts = plan.student_upserts.filter((u) => u.kind === 'insert');
+    const updates = plan.student_upserts.filter((u) => u.kind === 'update');
+
+    if (inserts.length > 0) {
+      const { error } = await service.from('students').insert(
+        inserts.map((u) => ({
+          student_number: u.student_number,
+          last_name: u.last_name,
+          first_name: u.first_name,
+          middle_name: u.middle_name,
+        })),
+      );
+      if (error) return { ok: false, change: 'skipped', error: `student insert: ${error.message}` };
+    }
+    for (const u of updates) {
+      const { error } = await service
+        .from('students')
+        .update({
+          last_name: u.last_name,
+          first_name: u.first_name,
+          middle_name: u.middle_name,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', u.existing_id!);
+      if (error) return { ok: false, change: 'skipped', error: `student update: ${error.message}` };
+    }
+
+    // Resolve student_id for fresh enrolments (newly-inserted students need
+    // their generated UUID looked up).
+    let studentId: string | null = studentRow?.id ?? null;
+    if (!studentId && plan.enrollment_inserts.length > 0) {
+      const { data } = await service
+        .from('students')
+        .select('id')
+        .eq('student_number', app.studentNumber)
+        .maybeSingle();
+      studentId = (data as { id: string } | null)?.id ?? null;
+    }
+
+    for (const e of plan.enrollment_inserts) {
+      if (!studentId) return { ok: false, change: 'skipped', error: 'student_id not resolved' };
+      const { error } = await service.from('section_students').insert({
+        section_id: e.section_id,
+        student_id: studentId,
+        index_number: e.index_number,
+        enrollment_status: 'active',
+        enrollment_date: new Date().toISOString().slice(0, 10),
+      });
+      if (error) return { ok: false, change: 'skipped', error: `enrolment insert: ${error.message}` };
+    }
+
+    for (const change of plan.enrollment_status_changes) {
+      const patch: Record<string, unknown> = { enrollment_status: change.to };
+      if (change.to === 'withdrawn') {
+        patch.withdrawal_date = new Date().toISOString().slice(0, 10);
+      } else {
+        patch.withdrawal_date = null;
+      }
+      const { error } = await service
+        .from('section_students')
+        .update(patch)
+        .eq('id', change.enrollment_id);
+      if (error) return { ok: false, change: 'skipped', error: `status change: ${error.message}` };
+    }
+
+    // Summarise what happened.
+    if (plan.enrollment_inserts.length > 0) {
+      return { ok: true, change: 'enrolled' };
+    }
+    if (plan.enrollment_status_changes.some((c) => c.to === 'active')) {
+      return { ok: true, change: 'reactivated' };
+    }
+    if (updates.length > 0) return { ok: true, change: 'updated' };
+    if (inserts.length > 0) return { ok: true, change: 'inserted' };
+    return { ok: true, change: 'unchanged' };
+  } catch (err) {
+    return {
+      ok: false,
+      change: 'skipped',
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }

@@ -48,3 +48,26 @@ export const DeleteAySchema = z.object({
 });
 
 export type DeleteAyInput = z.infer<typeof DeleteAySchema>;
+
+// PATCH /api/sis/ay-setup/terms/[termId] — set start/end dates on a term.
+// Either field may be null (clear the value); if both are set, end must be ≥ start.
+const termDate = z
+  .string()
+  .trim()
+  .transform((s) => (s.length === 0 ? null : s))
+  .refine((s) => s === null || /^\d{4}-\d{2}-\d{2}$/.test(s), {
+    message: 'Use YYYY-MM-DD',
+  })
+  .nullable();
+
+export const TermDatesSchema = z
+  .object({
+    startDate: termDate,
+    endDate: termDate,
+  })
+  .refine((v) => !v.startDate || !v.endDate || v.startDate <= v.endDate, {
+    message: 'End date must be on or after start date',
+    path: ['endDate'],
+  });
+
+export type TermDatesInput = z.infer<typeof TermDatesSchema>;

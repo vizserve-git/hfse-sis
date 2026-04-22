@@ -435,3 +435,17 @@ export const DocumentValidationSchema = z.discriminatedUnion('status', [
 ]);
 
 export type DocumentValidationInput = z.infer<typeof DocumentValidationSchema>;
+
+// ──────────────────────────────────────────────────────────────────────────
+// Compassionate-leave allowance override
+// ──────────────────────────────────────────────────────────────────────────
+//
+// Edits students.urgent_compassionate_allowance (grading schema, keyed by
+// studentNumber). Default 5 days/year per HFSE policy. Admin can bump for
+// medical carve-outs. Upper bound 30 is sanity — no real HFSE policy.
+
+export const AllowanceSchema = z.object({
+  allowance: z.number().int().min(0).max(30),
+});
+
+export type AllowanceInput = z.infer<typeof AllowanceSchema>;

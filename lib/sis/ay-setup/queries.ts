@@ -16,6 +16,38 @@ export type AcademicYearRow = {
   created_at: string;
 };
 
+export type TermRow = {
+  id: string;
+  academic_year_id: string;
+  term_number: number;
+  label: string;
+  start_date: string | null;
+  end_date: string | null;
+  is_current: boolean;
+};
+
+/**
+ * Returns all terms grouped by academic_year_id. Used by the AY Setup page
+ * to render the per-AY term-dates editor inline.
+ */
+export async function listTermsByAy(): Promise<Record<string, TermRow[]>> {
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from('terms')
+    .select('id, academic_year_id, term_number, label, start_date, end_date, is_current')
+    .order('term_number', { ascending: true });
+  if (error) {
+    console.error('[ay-setup queries] listTermsByAy failed:', error.message);
+    return {};
+  }
+  const byAy: Record<string, TermRow[]> = {};
+  for (const row of (data ?? []) as TermRow[]) {
+    if (!byAy[row.academic_year_id]) byAy[row.academic_year_id] = [];
+    byAy[row.academic_year_id].push(row);
+  }
+  return byAy;
+}
+
 export type AcademicYearListItem = AcademicYearRow & {
   counts: {
     terms: number;

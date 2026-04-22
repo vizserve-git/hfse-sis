@@ -8,6 +8,7 @@ import {
   UserX,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
+import { NewSectionButton } from '@/components/markbook/new-section-button';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -45,6 +46,17 @@ export default async function SectionsListPage() {
         .select('id, name, level:levels(id, code, label, level_type)')
         .eq('academic_year_id', ay.id)
     : { data: [] as Array<{ id: string; name: string; level: LevelLite | LevelLite[] | null }> };
+
+  // Level catalogue for the "New section" dialog.
+  const { data: levelRows } = await supabase
+    .from('levels')
+    .select('id, code, label, level_type')
+    .order('code');
+  const levelOptions = ((levelRows ?? []) as LevelLite[]).map((l) => ({
+    id: l.id,
+    code: l.code,
+    label: l.label,
+  }));
 
   const ids = (sections ?? []).map((s) => s.id);
   const counts: Record<string, { active: number; withdrawn: number }> = {};
@@ -102,14 +114,17 @@ export default async function SectionsListPage() {
             enrolment, or assign a form class adviser.
           </p>
         </div>
-        {ay && (
-          <Badge
-            variant="outline"
-            className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-          >
-            {ay.ay_code}
-          </Badge>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {ay && (
+            <Badge
+              variant="outline"
+              className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+            >
+              {ay.ay_code}
+            </Badge>
+          )}
+          <NewSectionButton levels={levelOptions} ayCode={ay?.ay_code ?? null} />
+        </div>
       </header>
 
       {/* Stats */}

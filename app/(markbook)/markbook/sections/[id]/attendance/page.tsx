@@ -1,8 +1,15 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, CalendarCheck, CalendarDays, Percent } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  CalendarCheck,
+  CalendarDays,
+  Percent,
+} from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardAction,
@@ -13,10 +20,19 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AttendanceGrid } from './attendance-grid';
+import {
+  AttendanceReadOnlyTable,
+  type ReadOnlyRow,
+} from '@/components/markbook/attendance-readonly-table';
 
 type LevelLite = { code: string; label: string };
 type TermLite = { id: string; label: string; term_number: number; is_current: boolean };
+
+function todayIso(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 export default async function SectionAttendancePage({
   params,
@@ -62,49 +78,58 @@ export default async function SectionAttendancePage({
     selectedTermId && enrolmentIds.length > 0
       ? await supabase
           .from('attendance_records')
-          .select('section_student_id, school_days, days_present, days_late')
+          .select(
+            'section_student_id, school_days, days_present, days_late, days_excused, days_absent, attendance_pct',
+          )
           .eq('term_id', selectedTermId)
           .in('section_student_id', enrolmentIds)
       : { data: [] };
-  const byEnrolment = new Map((records ?? []).map((r) => [r.section_student_id, r]));
+  type RollupLite = {
+    section_student_id: string;
+    school_days: number | null;
+    days_present: number | null;
+    days_late: number | null;
+    days_excused: number | null;
+    days_absent: number | null;
+    attendance_pct: number | null;
+  };
+  const byEnrolment = new Map(
+    ((records ?? []) as RollupLite[]).map((r) => [r.section_student_id, r]),
+  );
 
-  const gridRows = (enrolments ?? []).map((e) => {
+  const rows: ReadOnlyRow[] = (enrolments ?? []).map((e) => {
     const s = Array.isArray(e.student) ? e.student[0] : e.student;
     const rec = byEnrolment.get(e.id);
     return {
-      enrolment_id: e.id,
-      index_number: e.index_number,
+      enrolmentId: e.id,
+      indexNumber: e.index_number,
       withdrawn: e.enrollment_status === 'withdrawn',
-      student_number: s?.student_number ?? '',
-      student_name: s
+      studentNumber: s?.student_number ?? '',
+      studentName: s
         ? [s.last_name, s.first_name, s.middle_name].filter(Boolean).join(', ')
         : '(missing)',
-      school_days: rec?.school_days ?? null,
-      days_present: rec?.days_present ?? null,
-      days_late: rec?.days_late ?? null,
+      schoolDays: rec?.school_days ?? null,
+      daysPresent: rec?.days_present ?? null,
+      daysLate: rec?.days_late ?? null,
+      daysExcused: rec?.days_excused ?? null,
+      daysAbsent: rec?.days_absent ?? null,
+      attendancePct: rec?.attendance_pct != null ? Number(rec.attendance_pct) : null,
     };
   });
 
   // Aggregate stats for the current term (active students only).
-  const active = gridRows.filter((r) => !r.withdrawn);
-  const schoolDays = active.find((r) => r.school_days != null)?.school_days ?? null;
-  const withPresent = active.filter(
-    (r) => r.school_days != null && r.days_present != null && r.school_days > 0,
-  );
+  const active = rows.filter((r) => !r.withdrawn);
+  const marked = active.filter((r) => r.schoolDays != null);
+  const schoolDays = marked.reduce((m, r) => Math.max(m, r.schoolDays ?? 0), 0) || null;
+  const pctValues = marked
+    .map((r) => r.attendancePct)
+    .filter((n): n is number => n != null);
   const avgRate =
-    withPresent.length > 0
-      ? Math.round(
-          (withPresent.reduce(
-            (sum, r) => sum + (r.days_present ?? 0) / (r.school_days ?? 1),
-            0,
-          ) /
-            withPresent.length) *
-            100,
-        )
+    pctValues.length > 0
+      ? Math.round((pctValues.reduce((s, n) => s + n, 0) / pctValues.length) * 100) / 100
       : null;
-  const perfect = active.filter(
-    (r) =>
-      r.school_days != null && r.days_present != null && r.days_present === r.school_days,
+  const perfect = marked.filter(
+    (r) => (r.daysAbsent ?? 0) === 0 && (r.daysLate ?? 0) === 0 && (r.schoolDays ?? 0) > 0,
   ).length;
 
   return (
@@ -135,9 +160,16 @@ export default async function SectionAttendancePage({
             </Badge>
           </div>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            School days / days present / days late per student per term. Auto-saves on blur.
+            Read-only rollup of daily attendance. Mark, correct, or import in the Attendance
+            module — edits flow back here automatically.
           </p>
         </div>
+        <Button asChild variant="default" size="sm" className="gap-1.5">
+          <Link href={`/attendance/${id}?date=${todayIso()}`}>
+            Mark attendance
+            <ArrowUpRight className="size-3.5" />
+          </Link>
+        </Button>
       </header>
 
       {/* Term switcher */}
@@ -168,32 +200,32 @@ export default async function SectionAttendancePage({
             value={schoolDays == null ? '—' : schoolDays.toLocaleString('en-SG')}
             icon={CalendarDays}
             footerTitle={
-              schoolDays == null ? 'Not entered yet' : 'Same for every active student'
+              schoolDays == null ? 'Not marked yet' : `${marked.length} of ${active.length} marked`
             }
-            footerDetail="From the first student with data"
+            footerDetail="Max across students (NC days excluded)"
           />
           <StatCard
             description="Average attendance"
-            value={avgRate == null ? '—' : `${avgRate}%`}
+            value={avgRate == null ? '—' : `${avgRate.toFixed(1)}%`}
             icon={Percent}
             footerTitle={
               avgRate == null
                 ? 'No data yet'
-                : `Across ${withPresent.length} ${withPresent.length === 1 ? 'student' : 'students'}`
+                : `Across ${pctValues.length} ${pctValues.length === 1 ? 'student' : 'students'}`
             }
-            footerDetail="days present ÷ school days"
+            footerDetail="Present ÷ school days"
           />
           <StatCard
             description="Perfect attendance"
             value={perfect.toLocaleString('en-SG')}
             icon={CalendarCheck}
-            footerTitle={perfect === 0 ? 'None yet' : 'Zero days missed'}
+            footerTitle={perfect === 0 ? 'None yet' : 'Zero absences or lates'}
             footerDetail={`Of ${active.length} active students`}
           />
         </div>
       </div>
 
-      <AttendanceGrid sectionId={id} termId={selectedTermId} rows={gridRows} />
+      <AttendanceReadOnlyTable rows={rows} />
     </PageShell>
   );
 }

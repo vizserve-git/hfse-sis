@@ -1,9 +1,9 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, UserPlus } from 'lucide-react';
+import { Loader2, Search, UserPlus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
@@ -40,6 +40,21 @@ const DEFAULTS: ManualAddStudentInput = {
   first_name: '',
   middle_name: '',
   late_enrollee: false,
+  bus_no: '',
+  classroom_officer_role: '',
+};
+
+type AdmissionsMatch = {
+  ayCode: string;
+  enroleeNumber: string;
+  studentNumber: string | null;
+  fullName: string;
+  firstName: string | null;
+  lastName: string | null;
+  middleName: string | null;
+  level: string | null;
+  section: string | null;
+  status: string | null;
 };
 
 export function ManualAddStudent({
@@ -56,6 +71,63 @@ export function ManualAddStudent({
     defaultValues: DEFAULTS,
   });
 
+  // Admissions search state. Debounced input → /api/sis/search → click a
+  // match to pre-fill the form. Keeps the fully-manual path intact for the
+  // edge case where admissions doesn't have the student.
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<AdmissionsMatch[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [matchedFrom, setMatchedFrom] = useState<string | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // Debounce — only search after a short pause. Min 2 chars (matches API).
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/sis/search?q=${encodeURIComponent(q)}`);
+        const body = await res.json().catch(() => ({}));
+        if (res.ok && Array.isArray(body.matches)) {
+          setSearchResults(body.matches as AdmissionsMatch[]);
+        }
+      } catch {
+        // Ignore — leaves prior results in place. Registrar can still type manually.
+      } finally {
+        setSearching(false);
+      }
+    }, 220);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchQuery]);
+
+  function pickMatch(m: AdmissionsMatch) {
+    if (!m.studentNumber) {
+      toast.info('That admissions record has no studentNumber yet — assign one in Records first.');
+      return;
+    }
+    form.setValue('student_number', m.studentNumber, { shouldDirty: true, shouldValidate: true });
+    if (m.lastName) form.setValue('last_name', m.lastName, { shouldDirty: true, shouldValidate: true });
+    if (m.firstName) form.setValue('first_name', m.firstName, { shouldDirty: true, shouldValidate: true });
+    if (m.middleName != null) {
+      form.setValue('middle_name', m.middleName, { shouldDirty: true });
+    }
+    setMatchedFrom(`${m.ayCode} · ${m.fullName}`);
+    setSearchQuery('');
+    setSearchResults([]);
+  }
+
+  function clearMatch() {
+    setMatchedFrom(null);
+  }
+
   async function onSubmit(values: ManualAddStudentInput) {
     try {
       const res = await fetch(`/api/sections/${sectionId}/students`, {
@@ -67,6 +139,8 @@ export function ManualAddStudent({
           first_name: values.first_name,
           middle_name: values.middle_name?.trim() || null,
           enrollment_status: values.late_enrollee ? 'late_enrollee' : 'active',
+          bus_no: values.bus_no?.trim() || null,
+          classroom_officer_role: values.classroom_officer_role?.trim() || null,
         }),
       });
       const body = await res.json();
@@ -87,7 +161,12 @@ export function ManualAddStudent({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) form.reset(DEFAULTS);
+        if (!next) {
+          form.reset(DEFAULTS);
+          setSearchQuery('');
+          setSearchResults([]);
+          setMatchedFrom(null);
+        }
       }}
     >
       <SheetTrigger asChild>
@@ -112,6 +191,91 @@ export function ManualAddStudent({
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1 flex-col">
             <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-6">
+              {/* Admissions search — optional pre-fill before manual entry. */}
+              <div className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
+                <label
+                  htmlFor="admissions-search"
+                  className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+                >
+                  Search admissions (optional)
+                </label>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="admissions-search"
+                    placeholder="Name, studentNumber, or enroleeNumber…"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      if (matchedFrom) setMatchedFrom(null);
+                    }}
+                    className="pl-8 pr-8"
+                    autoComplete="off"
+                  />
+                  {(searching || searchQuery) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSearchResults([]);
+                      }}
+                      className="absolute right-2 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                      aria-label="Clear search"
+                    >
+                      {searching ? <Loader2 className="size-3 animate-spin" /> : <X className="size-3" />}
+                    </button>
+                  )}
+                </div>
+                {matchedFrom && (
+                  <div className="flex items-center justify-between rounded-md border border-primary/30 bg-primary/5 px-2 py-1.5 text-[11px]">
+                    <span className="truncate text-primary">
+                      Pre-filled from <span className="font-mono">{matchedFrom}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={clearMatch}
+                      className="ml-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+                {searchResults.length > 0 && (
+                  <div className="max-h-[180px] divide-y divide-border overflow-y-auto rounded-md border border-border bg-card">
+                    {searchResults.map((m) => (
+                      <button
+                        key={`${m.ayCode}|${m.enroleeNumber}`}
+                        type="button"
+                        onClick={() => pickMatch(m)}
+                        className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-muted/40"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-foreground">
+                            {m.fullName}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-2 font-mono text-[10px] text-muted-foreground">
+                            <span>{m.ayCode}</span>
+                            {m.studentNumber && <span>· #{m.studentNumber}</span>}
+                            {!m.studentNumber && (
+                              <span className="text-amber-700 dark:text-amber-200">
+                                · no studentNumber yet
+                              </span>
+                            )}
+                            {m.level && <span>· {m.level}</span>}
+                            {m.section && <span>· {m.section}</span>}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+                  <div className="px-2 py-1 text-[11px] text-muted-foreground">
+                    No matches — type manually below.
+                  </div>
+                )}
+              </div>
+
               <FormField
                 control={form.control}
                 name="student_number"
@@ -167,6 +331,46 @@ export function ManualAddStudent({
                       <Input {...field} value={field.value ?? ''} />
                     </FormControl>
                     <FormDescription>Optional.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="bus_no"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Bus number</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        value={field.value ?? ''}
+                        placeholder="e.g. SVC7"
+                        maxLength={40}
+                      />
+                    </FormControl>
+                    <FormDescription>Optional. Shown on the attendance sheet.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="classroom_officer_role"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Classroom officer role</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        value={field.value ?? ''}
+                        placeholder="e.g. HAPI HAUS"
+                        maxLength={80}
+                      />
+                    </FormControl>
+                    <FormDescription>Optional. Display-only.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

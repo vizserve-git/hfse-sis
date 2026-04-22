@@ -5,15 +5,25 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 // values expected by the audit-log UI; keep them in sync.
 export type AuditAction =
   | 'sheet.create'
+  | 'sheet.bulk_create'
   | 'sheet.lock'
   | 'sheet.unlock'
   | 'entry.update'
   | 'totals.update'
   | 'student.sync'
   | 'student.add'
+  | 'enrolment.metadata.update'
   | 'assignment.create'
   | 'assignment.delete'
+  | 'section.create'
   | 'attendance.update'
+  | 'attendance.daily.update'
+  | 'attendance.daily.correct'
+  | 'attendance.import.bulk'
+  | 'attendance.calendar.upsert'
+  | 'attendance.calendar.delete'
+  | 'attendance.event.create'
+  | 'attendance.event.delete'
   | 'comment.update'
   | 'publication.create'
   | 'publication.delete'
@@ -32,18 +42,26 @@ export type AuditAction =
   | 'sis.discount_code.expire'
   | 'sis.document.approve'
   | 'sis.document.reject'
+  | 'sis.allowance.update'
   | 'ay.create'
   | 'ay.switch_current'
   | 'ay.delete'
+  | 'ay.term_dates.update'
+  | 'ay.copy_teacher_assignments'
   | 'approver.assign'
-  | 'approver.revoke';
+  | 'approver.revoke'
+  | 'subject_config.update';
 
 export type AuditEntityType =
   | 'grading_sheet'
   | 'grade_entry'
+  | 'section'
   | 'section_student'
   | 'teacher_assignment'
   | 'attendance_record'
+  | 'attendance_daily'
+  | 'school_calendar'
+  | 'calendar_event'
   | 'report_card_comment'
   | 'report_card_publication'
   | 'sync_batch'
@@ -53,7 +71,9 @@ export type AuditEntityType =
   | 'enrolment_status'
   | 'discount_code'
   | 'academic_year'
-  | 'approver_assignment';
+  | 'term'
+  | 'approver_assignment'
+  | 'subject_config';
 
 type LogActionParams = {
   service: SupabaseClient;

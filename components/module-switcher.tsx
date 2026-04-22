@@ -1,12 +1,13 @@
 "use client";
 
-import { BookOpen, ChevronDown, ChevronUp, FolderOpen, Home, ShieldCheck, Users } from "lucide-react";
+import { BookOpen, CalendarCheck, ChevronDown, ChevronUp, FolderOpen, Home, ShieldCheck, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const MODULES = [
   { value: "markbook", label: "Markbook", icon: BookOpen, href: "/markbook" },
+  { value: "attendance", label: "Attendance", icon: CalendarCheck, href: "/attendance" },
   { value: "p-files", label: "P-Files", icon: FolderOpen, href: "/p-files" },
   { value: "records", label: "Records", icon: Users, href: "/records" },
   { value: "sis", label: "SIS Admin", icon: ShieldCheck, href: "/sis" },

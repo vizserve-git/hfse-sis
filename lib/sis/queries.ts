@@ -446,6 +446,9 @@ export type CrossAyMatch = {
   enroleeNumber: string;
   studentNumber: string | null;
   fullName: string;
+  firstName: string | null;
+  lastName: string | null;
+  middleName: string | null;
   level: string | null;
   section: string | null;
   status: string | null;
@@ -480,13 +483,14 @@ export async function searchStudentsAcrossAY(query: string): Promise<CrossAyMatc
     enroleeFullName: string | null;
     firstName: string | null;
     lastName: string | null;
+    middleName: string | null;
   };
 
   const perAyPromises = ayCodes.map(async (ayCode) => {
     const prefix = prefixFor(ayCode);
     const { data: appsData, error: appsErr } = await supabase
       .from(`${prefix}_enrolment_applications`)
-      .select('enroleeNumber, studentNumber, enroleeFullName, firstName, lastName')
+      .select('enroleeNumber, studentNumber, enroleeFullName, firstName, lastName, middleName')
       .or(
         `enroleeNumber.ilike.${pattern},studentNumber.ilike.${pattern},enroleeFullName.ilike.${pattern},firstName.ilike.${pattern},lastName.ilike.${pattern}`,
       )
@@ -527,6 +531,9 @@ export async function searchStudentsAcrossAY(query: string): Promise<CrossAyMatc
           enroleeNumber: a.enroleeNumber!,
           studentNumber: a.studentNumber,
           fullName,
+          firstName: a.firstName,
+          lastName: a.lastName,
+          middleName: a.middleName,
           level: s?.classLevel ?? null,
           section: s?.classSection ?? null,
           status: s?.applicationStatus ?? null,

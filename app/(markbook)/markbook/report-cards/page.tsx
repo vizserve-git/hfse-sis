@@ -28,6 +28,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { PublishWindowPanel } from '@/components/admin/publish-window-panel';
+import { BulkPublishDialog } from '@/components/admin/bulk-publish-dialog';
 import { SectionPicker } from './section-picker';
 
 type LevelLite = { id: string; code: string; label: string; level_type: 'primary' | 'secondary' };
@@ -64,11 +65,17 @@ export default async function ReportCardsListPage({
   const { data: terms } = ay
     ? await supabase
         .from('terms')
-        .select('id, term_number, label')
+        .select('id, term_number, label, is_current')
         .eq('academic_year_id', ay.id)
         .order('term_number')
     : { data: [] };
-  const termList = terms ?? [];
+  const termList = (terms ?? []) as Array<{
+    id: string;
+    term_number: number;
+    label: string;
+    is_current: boolean;
+  }>;
+  const currentTermId = termList.find((t) => t.is_current)?.id ?? termList[0]?.id ?? null;
 
   // Section-detail data (only when a section is selected)
   let selectedLabel: string | null = null;
@@ -176,6 +183,13 @@ export default async function ReportCardsListPage({
           </p>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          {pickerSections.length > 0 && termList.length > 0 && (
+            <BulkPublishDialog
+              sections={pickerSections}
+              terms={termList}
+              defaultTermId={currentTermId}
+            />
+          )}
           <SectionPicker sections={pickerSections} selectedId={q.section_id} />
         </div>
       </header>

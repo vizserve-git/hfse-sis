@@ -12,7 +12,7 @@ import {
   type ColumnFiltersState,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, X } from "lucide-react";
+import { ArrowUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Pencil, Search, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EnrolmentEditSheet } from "@/components/markbook/enrolment-edit-sheet";
 
 export type RosterRow = {
   id: string;
@@ -28,11 +29,13 @@ export type RosterRow = {
   student_number: string;
   student_name: string;
   enrollment_status: "active" | "late_enrollee" | "withdrawn";
+  bus_no: string | null;
+  classroom_officer_role: string | null;
 };
 
 type StatusFilter = "all" | "active" | "late_enrollee" | "withdrawn";
 
-export function RosterTable({ data }: { data: RosterRow[] }) {
+export function RosterTable({ data, sectionId }: { data: RosterRow[]; sectionId: string }) {
   const [sorting, setSorting] = React.useState<SortingState>([{ id: "index_number", desc: false }]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = React.useState("");
@@ -119,8 +122,54 @@ export function RosterTable({ data }: { data: RosterRow[] }) {
           return row.original.enrollment_status === value;
         },
       },
+      {
+        id: "metadata",
+        header: "Bus · Officer",
+        cell: ({ row }) => {
+          const { bus_no, classroom_officer_role } = row.original;
+          if (!bus_no && !classroom_officer_role) {
+            return <span className="font-mono text-[11px] text-muted-foreground">—</span>;
+          }
+          return (
+            <div className="flex flex-wrap gap-1.5 font-mono text-[10px] text-muted-foreground">
+              {bus_no && (
+                <span title="Bus number" className="rounded bg-muted/60 px-1.5 py-0.5">
+                  🚌 {bus_no}
+                </span>
+              )}
+              {classroom_officer_role && (
+                <span title="Classroom officer" className="rounded bg-muted/60 px-1.5 py-0.5">
+                  ⭐ {classroom_officer_role}
+                </span>
+              )}
+            </div>
+          );
+        },
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <EnrolmentEditSheet
+            sectionId={sectionId}
+            enrolmentId={row.original.id}
+            studentName={row.original.student_name}
+            indexNumber={row.original.index_number}
+            initial={{
+              bus_no: row.original.bus_no,
+              classroom_officer_role: row.original.classroom_officer_role,
+              enrollment_status: row.original.enrollment_status,
+            }}
+          >
+            <Button variant="ghost" size="sm" className="h-7 px-2">
+              <Pencil className="size-3" />
+              <span className="sr-only">Edit enrolment</span>
+            </Button>
+          </EnrolmentEditSheet>
+        ),
+      },
     ],
-    [],
+    [sectionId],
   );
 
   const table = useReactTable({

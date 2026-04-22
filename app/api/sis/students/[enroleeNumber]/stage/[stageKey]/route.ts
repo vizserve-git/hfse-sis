@@ -11,6 +11,8 @@ import {
   type StageKey,
 } from '@/lib/schemas/sis';
 import { createServiceClient } from '@/lib/supabase/service';
+import { createAdmissionsClient } from '@/lib/supabase/admissions';
+import { syncOneStudent } from '@/lib/sync/students';
 
 // PATCH /api/sis/students/[enroleeNumber]/stage/[stageKey]?ay=AY2026
 //
@@ -147,5 +149,38 @@ export async function PATCH(
   // 4) Invalidate the per-AY cache so detail + list re-render with new data.
   revalidateTag(`sis:${ayCode}`, 'max');
 
-  return NextResponse.json({ ok: true, changed: changes.length });
+  // 5) Auto-sync the grading roster when the class stage flips to Assigned.
+  // Materialises students + section_students rows immediately so the
+  // registrar doesn't need a separate trip to /markbook/sync-students.
+  // Best-effort — failures log but don't fail the request; bulk sync is
+  // still available as a fallback.
+  let autoSync: { change: string; reason?: string; error?: string } | null = null;
+  if (stageKey === 'class' && status === 'Assigned') {
+    const admissions = createAdmissionsClient();
+    const result = await syncOneStudent(supabase, admissions, enroleeNumber, ayCode);
+    autoSync = {
+      change: result.change,
+      ...(result.reason ? { reason: result.reason } : {}),
+      ...(result.error ? { error: result.error } : {}),
+    };
+    if (result.ok && (result.change === 'enrolled' || result.change === 'inserted' || result.change === 'reactivated')) {
+      await logAction({
+        service: supabase,
+        actor: { id: auth.user.id, email: auth.user.email ?? null },
+        action: 'student.sync',
+        entityType: 'sync_batch',
+        entityId: enroleeNumber,
+        context: {
+          ay_code: ayCode,
+          trigger: 'stage.class.assigned',
+          enroleeNumber,
+          change: result.change,
+        },
+      });
+    } else if (!result.ok) {
+      console.warn('[stage PATCH] auto-sync skipped:', result.reason ?? result.error);
+    }
+  }
+
+  return NextResponse.json({ ok: true, changed: changes.length, autoSync });
 }

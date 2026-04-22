@@ -1,0 +1,102 @@
+import { NextResponse, type NextRequest } from 'next/server';
+
+import { requireRole } from '@/lib/auth/require-role';
+import { logAction } from '@/lib/audit/log-action';
+import { createServiceClient } from '@/lib/supabase/service';
+import { EnrolmentMetadataSchema } from '@/lib/schemas/enrolment';
+
+// PATCH /api/sections/[id]/students/[enrolmentId]
+//
+// Edits per-enrolment metadata:
+//   - bus_no                  (display-only sheet header)
+//   - classroom_officer_role  (HAPI HAUS etc.)
+//   - enrollment_status       ('active' | 'late_enrollee' | 'withdrawn')
+//
+// Doesn't change index_number (immutable per KD) or the underlying student row
+// (edit those via /markbook/sync-students or /records/students/[enroleeNumber]).
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; enrolmentId: string }> },
+) {
+  const auth = await requireRole([
+    'registrar',
+    'school_admin',
+    'admin',
+    'superadmin',
+  ]);
+  if ('error' in auth) return auth.error;
+
+  const { id: sectionId, enrolmentId } = await params;
+  const body = await request.json().catch(() => null);
+  const parsed = EnrolmentMetadataSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'invalid payload', details: parsed.error.flatten() },
+      { status: 400 },
+    );
+  }
+
+  const service = createServiceClient();
+
+  // Load before state for the audit diff + section sanity-check.
+  const { data: before, error: loadErr } = await service
+    .from('section_students')
+    .select('id, section_id, bus_no, classroom_officer_role, enrollment_status, withdrawal_date')
+    .eq('id', enrolmentId)
+    .maybeSingle();
+  if (loadErr) return NextResponse.json({ error: loadErr.message }, { status: 500 });
+  if (!before) return NextResponse.json({ error: 'enrolment not found' }, { status: 404 });
+  if (before.section_id !== sectionId) {
+    return NextResponse.json(
+      { error: 'enrolment does not belong to that section' },
+      { status: 400 },
+    );
+  }
+
+  // Build the update payload. Only touch fields actually provided.
+  const patch: Record<string, unknown> = {};
+  if ('bus_no' in parsed.data) patch.bus_no = parsed.data.bus_no;
+  if ('classroom_officer_role' in parsed.data) {
+    patch.classroom_officer_role = parsed.data.classroom_officer_role;
+  }
+  if (parsed.data.enrollment_status !== undefined) {
+    patch.enrollment_status = parsed.data.enrollment_status;
+    // Bookkeeping: when transitioning to/from 'withdrawn', manage withdrawal_date.
+    if (parsed.data.enrollment_status === 'withdrawn' && !before.withdrawal_date) {
+      patch.withdrawal_date = new Date().toISOString().slice(0, 10);
+    } else if (parsed.data.enrollment_status !== 'withdrawn' && before.withdrawal_date) {
+      patch.withdrawal_date = null;
+    }
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ ok: true, changed: false });
+  }
+
+  const { error: updateErr } = await service
+    .from('section_students')
+    .update(patch)
+    .eq('id', enrolmentId);
+  if (updateErr) {
+    return NextResponse.json({ error: updateErr.message }, { status: 500 });
+  }
+
+  await logAction({
+    service,
+    actor: { id: auth.user.id, email: auth.user.email ?? null },
+    action: 'enrolment.metadata.update',
+    entityType: 'section_student',
+    entityId: enrolmentId,
+    context: {
+      section_id: sectionId,
+      before: {
+        bus_no: before.bus_no ?? null,
+        classroom_officer_role: before.classroom_officer_role ?? null,
+        enrollment_status: before.enrollment_status,
+      },
+      after: patch,
+    },
+  });
+
+  return NextResponse.json({ ok: true, changed: true });
+}

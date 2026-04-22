@@ -54,6 +54,8 @@ export async function POST(
         first_name?: string;
         middle_name?: string | null;
         enrollment_status?: 'active' | 'late_enrollee';
+        bus_no?: string | null;
+        classroom_officer_role?: string | null;
       }
     | null;
   if (!body) return NextResponse.json({ error: 'invalid body' }, { status: 400 });
@@ -69,6 +71,8 @@ export async function POST(
   }
   const middle_name = body.middle_name?.trim() || null;
   const enrollment_status = body.enrollment_status === 'late_enrollee' ? 'late_enrollee' : 'active';
+  const bus_no = body.bus_no?.toString().trim() || null;
+  const classroom_officer_role = body.classroom_officer_role?.toString().trim() || null;
 
   const service = createServiceClient();
 
@@ -138,6 +142,8 @@ export async function POST(
       index_number: nextIndex,
       enrollment_status,
       enrollment_date: new Date().toISOString().slice(0, 10),
+      bus_no,
+      classroom_officer_role,
     })
     .select('id')
     .single();

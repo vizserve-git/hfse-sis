@@ -17,7 +17,7 @@ export const ROLES: Role[] = [
   "p-file",
 ];
 
-export type Module = "markbook" | "p-files" | "records" | "sis";
+export type Module = "markbook" | "p-files" | "records" | "sis" | "attendance";
 
 export type NavItem = {
   href: string;
@@ -57,6 +57,28 @@ const RECORDS_NAV: NavSection[] = [
   },
 ];
 
+// Attendance module — sole writer of daily attendance (KD #47).
+// Route group: (attendance)/attendance/*. Form advisers + registrar+ mark
+// daily attendance; import is registrar+ only.
+const ATTENDANCE_NAV: NavSection[] = [
+  {
+    items: [
+      { href: "/attendance", label: "Sections" },
+      {
+        href: "/attendance/calendar",
+        label: "School Calendar",
+        requiresRoles: ["registrar", "school_admin", "admin", "superadmin"],
+      },
+      {
+        href: "/attendance/import",
+        label: "Import",
+        requiresRoles: ["registrar", "school_admin", "admin", "superadmin"],
+      },
+      { href: "/attendance/audit-log", label: "Audit Log" },
+    ],
+  },
+];
+
 // SIS admin hub — the system-level admin surface where structural ops live.
 // Distinct from Records. Route group: (sis)/sis/*. Access: school_admin +
 // admin + superadmin (AY Setup) and superadmin-only (Approvers).
@@ -66,6 +88,7 @@ const SIS_NAV: NavSection[] = [
       { href: "/sis", label: "Admin Hub" },
       { href: "/sis/ay-setup", label: "AY Setup", requiresRoles: ["school_admin", "admin", "superadmin"] },
       { href: "/sis/admin/approvers", label: "Approvers", requiresRoles: ["superadmin"] },
+      { href: "/sis/admin/subjects", label: "Subject Weights", requiresRoles: ["superadmin"] },
     ],
   },
 ];
@@ -80,6 +103,7 @@ export const NAV_BY_MODULE: {
   "p-files": NavSection[];
   records: NavSection[];
   sis: NavSection[];
+  attendance: NavSection[];
 } = {
   markbook: {
     teacher: [
@@ -177,6 +201,7 @@ export const NAV_BY_MODULE: {
   "p-files": PFILES_NAV,
   records: RECORDS_NAV,
   sis: SIS_NAV,
+  attendance: ATTENDANCE_NAV,
 };
 
 // Which roles may access a given route prefix. Longer prefixes are
@@ -184,8 +209,12 @@ export const NAV_BY_MODULE: {
 // must appear before the broader `/sis` rule.
 export const ROUTE_ACCESS: Array<{ prefix: string; allowed: Role[] }> = [
   { prefix: "/sis/admin/approvers", allowed: ["superadmin"] },
+  { prefix: "/sis/admin/subjects", allowed: ["superadmin"] },
   { prefix: "/sis/ay-setup", allowed: ["school_admin", "admin", "superadmin"] },
   { prefix: "/admin/admissions", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
+  { prefix: "/attendance/import", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
+  { prefix: "/attendance/calendar", allowed: ["registrar", "school_admin", "admin", "superadmin"] },
+  { prefix: "/attendance", allowed: ["teacher", "registrar", "school_admin", "admin", "superadmin"] },
   { prefix: "/markbook", allowed: ["teacher", "registrar", "school_admin", "admin", "superadmin"] },
   { prefix: "/p-files", allowed: ["p-file", "school_admin", "admin", "superadmin"] },
   { prefix: "/records", allowed: ["registrar", "school_admin", "admin", "superadmin"] },

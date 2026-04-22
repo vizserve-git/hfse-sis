@@ -10,6 +10,8 @@ import { EditStageDialog } from '@/components/sis/edit-stage-dialog';
 import { EnrollmentHistoryChips } from '@/components/sis/enrollment-history-chips';
 import { SisEmptyState } from '@/components/sis/empty-state';
 import { FieldGrid, FieldSectionsCard, type Field } from '@/components/sis/field-grid';
+import { StudentAttendanceTab } from '@/components/sis/student-attendance-tab';
+import { CompassionateAllowanceInline } from '@/components/sis/compassionate-allowance-inline';
 import type { ParentSlot, ProfileUpdateInput, StageKey } from '@/lib/schemas/sis';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -58,13 +60,34 @@ export default async function SisStudentDetailPage({
     ? await getEnrollmentHistory(application.studentNumber)
     : [];
 
+  // Look up the student's compassionate-leave allowance from the grading
+  // schema (via studentNumber). Null when the student hasn't been synced yet
+  // or has no studentNumber — disables the inline editor with a reason.
+  let allowance: number | null = null;
+  let allowanceDisabledReason: string | null = null;
+  if (application.studentNumber) {
+    const { data: stu } = await service
+      .from('students')
+      .select('urgent_compassionate_allowance')
+      .eq('student_number', application.studentNumber)
+      .maybeSingle();
+    if (stu) {
+      allowance = (stu as { urgent_compassionate_allowance: number | null })
+        .urgent_compassionate_allowance ?? 5;
+    } else {
+      allowanceDisabledReason = 'Not yet synced to grading schema';
+    }
+  } else {
+    allowanceDisabledReason = 'No studentNumber assigned yet';
+  }
+
   const fullName =
     application.enroleeFullName ??
     [application.lastName, application.firstName, application.middleName].filter(Boolean).join(' ') ??
     '(no name on file)';
 
-  const tab = ['profile', 'family', 'enrollment', 'documents'].includes(tabParam ?? '')
-    ? (tabParam as 'profile' | 'family' | 'enrollment' | 'documents')
+  const tab = ['profile', 'family', 'enrollment', 'documents', 'attendance'].includes(tabParam ?? '')
+    ? (tabParam as 'profile' | 'family' | 'enrollment' | 'documents' | 'attendance')
     : 'profile';
 
   return (
@@ -106,10 +129,17 @@ export default async function SisStudentDetailPage({
           <TabsTrigger value="family">Family</TabsTrigger>
           <TabsTrigger value="enrollment">Enrollment</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
+          <TabsTrigger value="attendance">Attendance</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="space-y-6">
-          <ProfileTab app={application} ayCode={selectedAy} enroleeNumber={application.enroleeNumber} />
+          <ProfileTab
+            app={application}
+            ayCode={selectedAy}
+            enroleeNumber={application.enroleeNumber}
+            allowance={allowance}
+            allowanceDisabledReason={allowanceDisabledReason}
+          />
         </TabsContent>
 
         <TabsContent value="family" className="space-y-6">
@@ -128,6 +158,10 @@ export default async function SisStudentDetailPage({
         <TabsContent value="documents" className="space-y-6">
           <DocumentsTab documents={documents} enroleeNumber={application.enroleeNumber} ayCode={selectedAy} />
         </TabsContent>
+
+        <TabsContent value="attendance" className="space-y-6">
+          <StudentAttendanceTab studentNumber={application.studentNumber} fullName={fullName} />
+        </TabsContent>
       </Tabs>
     </PageShell>
   );
@@ -137,10 +171,14 @@ function ProfileTab({
   app,
   ayCode,
   enroleeNumber,
+  allowance,
+  allowanceDisabledReason,
 }: {
   app: ApplicationRow;
   ayCode: string;
   enroleeNumber: string;
+  allowance: number | null;
+  allowanceDisabledReason: string | null;
 }) {
   // Pre-populate the editor sheet with the current values. The schema and
   // sheet decide which fields are editable; the page just hands over the row.
@@ -173,6 +211,12 @@ function ProfileTab({
         <div className="flex justify-end">
           <EditProfileSheet ayCode={ayCode} enroleeNumber={enroleeNumber} initial={initial} />
         </div>
+        <CompassionateAllowanceInline
+          enroleeNumber={enroleeNumber}
+          initial={allowance}
+          disabled={!!allowanceDisabledReason}
+          disabledReason={allowanceDisabledReason ?? undefined}
+        />
         <FieldSectionsCard
           sections={[
             {
