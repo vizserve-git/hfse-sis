@@ -1,0 +1,163 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+// Max active students per section. Mirrors Hard Rule #5. Kept as a local
+// constant so this helper is self-contained without pulling a central
+// constants module.
+const MAX_ACTIVE_PER_SECTION = 50;
+
+export type ClassAssignment = {
+  section_id: string;
+  classLevel: string;
+  classSection: string;
+};
+
+export type ClassAssignmentError = {
+  error: string;
+};
+
+type ApplicationLite = {
+  levelApplied: string | null;
+  classType: string | null;
+  preferredSchedule: string | null;
+};
+
+/**
+ * Picks the best section for a newly-enrolled applicant.
+ *
+ * Algorithm:
+ *   1. Resolve the AY + level. Refuse if levelApplied doesn't match any level.
+ *   2. Load sections at that level with their active-enrolment counts.
+ *   3. Filter out sections at capacity (< 50 active per Hard Rule #5).
+ *   4. Score remaining sections on classType + preferredSchedule matching.
+ *   5. Pick highest score, tiebreaker = least-loaded, then alphabetical name.
+ *
+ * Scoring (higher is better):
+ *   - classType exact match (case-insensitive):               +10
+ *   - classType both null (neutral):                          +3
+ *   - classType one-sided null:                               +1
+ *   - classType set on both but different:                    +0
+ *   - preferredSchedule case-insensitive substring of
+ *     section.name OR section.class_type:                     +5
+ *
+ * Sections don't have a dedicated schedule column; the school can embed
+ * schedule hints in the section name (e.g. `Diamond-MWF`) to make the
+ * preferredSchedule signal pay off. Without that the score degenerates to
+ * classType + load.
+ */
+export async function pickSectionForApplicant(
+  service: SupabaseClient,
+  ayCode: string,
+  application: ApplicationLite,
+): Promise<ClassAssignment | ClassAssignmentError> {
+  if (!application.levelApplied) {
+    return { error: 'Application has no levelApplied value — cannot assign class' };
+  }
+
+  // 1. Resolve AY + level.
+  const { data: ayRow, error: ayErr } = await service
+    .from('academic_years')
+    .select('id')
+    .eq('ay_code', ayCode)
+    .maybeSingle();
+  if (ayErr || !ayRow) {
+    return { error: `Academic year ${ayCode} not found` };
+  }
+  const ayId = (ayRow as { id: string }).id;
+
+  const { data: levelRow, error: levelErr } = await service
+    .from('levels')
+    .select('id, code')
+    .eq('code', application.levelApplied)
+    .maybeSingle();
+  if (levelErr || !levelRow) {
+    return { error: `Level ${application.levelApplied} has no section` };
+  }
+  const level = levelRow as { id: string; code: string };
+
+  // 2. Load sections + active counts.
+  const { data: sectionRows, error: sectionsErr } = await service
+    .from('sections')
+    .select('id, name, class_type')
+    .eq('academic_year_id', ayId)
+    .eq('level_id', level.id);
+  if (sectionsErr) {
+    return { error: `Section lookup failed: ${sectionsErr.message}` };
+  }
+  const sections = (sectionRows ?? []) as Array<{
+    id: string;
+    name: string;
+    class_type: string | null;
+  }>;
+  if (sections.length === 0) {
+    return { error: `No sections configured at ${level.code} for ${ayCode}` };
+  }
+
+  const sectionIds = sections.map((s) => s.id);
+  const { data: enrolmentRows, error: enrErr } = await service
+    .from('section_students')
+    .select('section_id')
+    .eq('enrollment_status', 'active')
+    .in('section_id', sectionIds);
+  if (enrErr) {
+    return { error: `Enrolment count lookup failed: ${enrErr.message}` };
+  }
+  const activeCountBySection = new Map<string, number>();
+  for (const row of (enrolmentRows ?? []) as Array<{ section_id: string }>) {
+    activeCountBySection.set(row.section_id, (activeCountBySection.get(row.section_id) ?? 0) + 1);
+  }
+
+  // 3. Capacity filter.
+  const candidates = sections
+    .map((s) => ({ ...s, activeCount: activeCountBySection.get(s.id) ?? 0 }))
+    .filter((s) => s.activeCount < MAX_ACTIVE_PER_SECTION);
+  if (candidates.length === 0) {
+    return { error: `All sections at ${level.code} are at capacity (${MAX_ACTIVE_PER_SECTION} active)` };
+  }
+
+  // 4. Score.
+  const scored = candidates.map((s) => ({
+    ...s,
+    score: scoreSection(s, application),
+  }));
+
+  // 5. Sort + pick.
+  scored.sort(
+    (a, b) =>
+      b.score - a.score || a.activeCount - b.activeCount || a.name.localeCompare(b.name),
+  );
+  const winner = scored[0];
+
+  return {
+    section_id: winner.id,
+    classLevel: level.code,
+    classSection: winner.name,
+  };
+}
+
+function scoreSection(
+  section: { name: string; class_type: string | null },
+  app: ApplicationLite,
+): number {
+  let score = 0;
+
+  // classType match.
+  const secType = section.class_type?.trim().toLowerCase() ?? '';
+  const appType = app.classType?.trim().toLowerCase() ?? '';
+  if (secType && appType) {
+    if (secType === appType) score += 10;
+    // both set, different → 0
+  } else if (!secType && !appType) {
+    score += 3;
+  } else {
+    score += 1;
+  }
+
+  // preferredSchedule fuzzy match on section name or class_type.
+  const pref = app.preferredSchedule?.trim().toLowerCase() ?? '';
+  if (pref) {
+    const haystack = `${section.name} ${section.class_type ?? ''}`.toLowerCase();
+    if (haystack.includes(pref)) score += 5;
+  }
+
+  return score;
+}

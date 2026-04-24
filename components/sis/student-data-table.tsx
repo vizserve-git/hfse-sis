@@ -49,7 +49,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ApplicationStatusBadge } from '@/components/sis/status-badge';
 import type { StudentListRow } from '@/lib/sis/queries';
 
-type StatusBucket = 'all' | 'enrolled' | 'pipeline' | 'withdrawn';
+export type StatusBucket = 'all' | 'enrolled' | 'pipeline' | 'withdrawn';
 
 function statusBucket(status: string | null): StatusBucket {
   const s = (status ?? '').trim();
@@ -71,15 +71,27 @@ function studentDisplayName(row: StudentListRow): string {
 // `linkAttribute="studentNumber"` to point at the cross-year permanent URL.
 // Rows without a studentNumber fall back to the enroleeNumber URL so unsynced
 // enrolled applicants (rare edge case) still have a working link.
+// `linkQuery` appends `?key=value` pairs — the Admissions detail page is
+// enroleeNumber+AY-scoped, so historical-AY browsing must thread `ay` through
+// or the detail page falls back to the current AY and 404s.
 export function StudentDataTable({
   data,
   linkBase = '/admissions/applications',
   linkAttribute = 'enroleeNumber',
+  linkQuery,
 }: {
   data: StudentListRow[];
   linkBase?: string;
   linkAttribute?: 'enroleeNumber' | 'studentNumber';
+  linkQuery?: Record<string, string>;
 }) {
+  const querySuffix = React.useMemo(() => {
+    if (!linkQuery) return '';
+    const entries = Object.entries(linkQuery).filter(([, v]) => v);
+    if (entries.length === 0) return '';
+    const params = new URLSearchParams(entries);
+    return `?${params.toString()}`;
+  }, [linkQuery]);
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'level', desc: false },
     { id: 'section', desc: false },
@@ -110,7 +122,7 @@ export function StudentDataTable({
               : row.original.enroleeNumber;
           return (
             <Link
-              href={`${linkBase}/${linkId}`}
+              href={`${linkBase}/${linkId}${querySuffix}`}
               className="font-medium text-foreground underline transition-colors hover:text-primary"
             >
               {studentDisplayName(row.original)}
@@ -208,7 +220,7 @@ export function StudentDataTable({
         },
       },
     ],
-    [linkBase, linkAttribute],
+    [linkBase, linkAttribute, querySuffix],
   );
 
   const table = useReactTable({

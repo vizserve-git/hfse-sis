@@ -240,17 +240,59 @@ export type StageKey = (typeof STAGE_KEYS)[number];
 //
 // "Other / type your own" → free text via Other input. Admissions can request
 // new canonical values during UAT.
+// Canonical Directus dropdown values per stage, confirmed by the admissions
+// team 2026-04-24. First value in each list is the initial state for a
+// newly-submitted application. Legacy values that existed in earlier
+// revisions (e.g. `Rejected` on contract, `Assigned` on class) are removed;
+// EditStageDialog's "Other…" free-text escape hatch preserves the ability
+// to edit rows holding those legacy values without losing them on save.
 export const STAGE_STATUS_OPTIONS: Record<StageKey, readonly string[]> = {
-  application:  ['Submitted', 'Ongoing Verification', 'Processing', 'Enrolled', 'Enrolled (Conditional)', 'Withdrawn', 'Cancelled', 'Rejected'],
-  registration: ['Pending', 'Invoiced', 'Paid', 'Finished'],
-  documents:    ['Pending', 'Uploaded', 'Valid', 'Incomplete', 'Rejected'],
-  assessment:   ['Pending', 'Scheduled', 'Passed', 'Failed', 'Finished'],
-  contract:     ['Pending', 'Signed', 'Finished', 'Rejected'],
-  fees:         ['Pending', 'Invoiced', 'Paid', 'Finished'],
-  class:        ['Pending', 'Assigned', 'Finished'],
-  supplies:     ['Pending', 'Claimed', 'Finished'],
-  orientation:  ['Pending', 'Scheduled', 'Completed', 'Finished'],
+  application:  ['Submitted', 'Ongoing Verification', 'Processing', 'Enrolled', 'Enrolled (Conditional)', 'Cancelled', 'Withdrawn'],
+  registration: ['Pending', 'Unpaid', 'Finished', 'Cancelled'],
+  documents:    ['Pending', 'Verified', 'Incomplete', 'Finished', 'Cancelled'],
+  assessment:   ['Pending', 'Ongoing Assessment', 'Finished', 'Cancelled'],
+  contract:     ['Generated', 'Sent', 'Signed'],
+  fees:         ['Pending', 'Invoiced', 'Re-invoiced', 'Paid', 'Cancelled'],
+  class:        ['Pending', 'Incomplete', 'Finished', 'Cancelled'],
+  supplies:     ['Pending', 'Claimed', 'Cancelled'],
+  orientation:  ['Pending', 'Finished', 'Cancelled'],
 } as const;
+
+// Stages that must reach a "done" status before `applicationStatus` can be
+// flipped to `Enrolled`. Enforced server-side in the stage PATCH route.
+// `Enrolled (Conditional)` bypasses this gate (registrar override).
+// `class` is deliberately excluded — it's auto-assigned as part of the
+// Enrolled flip itself. `supplies` + `orientation` are post-enrollment
+// activities, not prereqs.
+export const ENROLLED_PREREQ_STAGES = [
+  'registration',
+  'documents',
+  'assessment',
+  'contract',
+  'fees',
+] as const satisfies readonly StageKey[];
+
+// Terminal "done" value per prereq stage. Used by the Enrolled-flip gate.
+export const STAGE_TERMINAL_STATUS: Partial<Record<StageKey, string>> = {
+  registration: 'Finished',
+  documents:    'Finished',
+  assessment:   'Finished',
+  contract:     'Signed',
+  fees:         'Paid',
+  // class gets 'Finished' set by the auto-assign algorithm, not a prereq.
+};
+
+// Sequential predecessor per prereq stage. Used by the stage PATCH route to
+// enforce "can't mark stage N terminal until stage N-1 is terminal". Only
+// gates the terminal-value transition — in-progress statuses (Unpaid,
+// Ongoing Assessment, Sent, Invoiced, Re-invoiced) and Cancelled can be
+// set any time. Registration has no predecessor (first prereq).
+export const PREREQ_STAGE_PREDECESSOR: Partial<Record<StageKey, StageKey>> = {
+  documents:  'registration',
+  assessment: 'documents',
+  contract:   'assessment',
+  fees:       'contract',
+};
 
 // Each stage maps to status / remarks / extras column names on enrolment_status.
 // The route reads this map to know which columns to write.
@@ -270,9 +312,16 @@ export const STAGE_COLUMN_MAP: Record<StageKey, StageColumns> = {
     updatedDateCol: 'applicationUpdatedDate', updatedByCol: 'applicationUpdatedBy',
     extras: [],
   },
+  // Non-camelCase oddities below are the ACTUAL production column names on
+  // `ay{YYYY}_enrolment_status` (see docs/context/10a-parent-portal-ddl.md
+  // and migrations 012/025/026). Do not "fix" these to look consistent —
+  // they match the parent-portal schema as frozen. Notably:
+  //   - `registrationUpdateDate` has no "d" in "Updated"
+  //   - All stages except `application` have lowercase "by" on *UpdatedBy
+  //   - `orientationUpdateby` drops BOTH the "d" and the capital "B"
   registration: {
     statusCol: 'registrationStatus', remarksCol: 'registrationRemarks',
-    updatedDateCol: 'registrationUpdatedDate', updatedByCol: 'registrationUpdatedBy',
+    updatedDateCol: 'registrationUpdateDate', updatedByCol: 'registrationUpdatedby',
     extras: [
       { fieldKey: 'invoice',     columnName: 'registrationInvoice',     kind: 'text', label: 'Invoice' },
       { fieldKey: 'paymentDate', columnName: 'registrationPaymentDate', kind: 'date', label: 'Payment date' },
@@ -280,12 +329,12 @@ export const STAGE_COLUMN_MAP: Record<StageKey, StageColumns> = {
   },
   documents: {
     statusCol: 'documentStatus', remarksCol: 'documentRemarks',
-    updatedDateCol: 'documentUpdatedDate', updatedByCol: 'documentUpdatedBy',
+    updatedDateCol: 'documentUpdatedDate', updatedByCol: 'documentUpdatedby',
     extras: [],
   },
   assessment: {
     statusCol: 'assessmentStatus', remarksCol: 'assessmentRemarks',
-    updatedDateCol: 'assessmentUpdatedDate', updatedByCol: 'assessmentUpdatedBy',
+    updatedDateCol: 'assessmentUpdatedDate', updatedByCol: 'assessmentUpdatedby',
     extras: [
       { fieldKey: 'schedule', columnName: 'assessmentSchedule',      kind: 'date', label: 'Schedule' },
       { fieldKey: 'math',     columnName: 'assessmentGradeMath',     kind: 'text', label: 'Math grade' },
@@ -295,12 +344,12 @@ export const STAGE_COLUMN_MAP: Record<StageKey, StageColumns> = {
   },
   contract: {
     statusCol: 'contractStatus', remarksCol: 'contractRemarks',
-    updatedDateCol: 'contractUpdatedDate', updatedByCol: 'contractUpdatedBy',
+    updatedDateCol: 'contractUpdatedDate', updatedByCol: 'contractUpdatedby',
     extras: [],
   },
   fees: {
     statusCol: 'feeStatus', remarksCol: 'feeRemarks',
-    updatedDateCol: 'feeUpdatedDate', updatedByCol: 'feeUpdatedBy',
+    updatedDateCol: 'feeUpdatedDate', updatedByCol: 'feeUpdatedby',
     extras: [
       { fieldKey: 'invoice',     columnName: 'feeInvoice',     kind: 'text', label: 'Invoice' },
       { fieldKey: 'paymentDate', columnName: 'feePaymentDate', kind: 'date', label: 'Payment date' },
@@ -309,7 +358,7 @@ export const STAGE_COLUMN_MAP: Record<StageKey, StageColumns> = {
   },
   class: {
     statusCol: 'classStatus', remarksCol: 'classRemarks',
-    updatedDateCol: 'classUpdatedDate', updatedByCol: 'classUpdatedBy',
+    updatedDateCol: 'classUpdatedDate', updatedByCol: 'classUpdatedby',
     extras: [
       { fieldKey: 'classAY',      columnName: 'classAY',      kind: 'text', label: 'Class AY' },
       { fieldKey: 'classLevel',   columnName: 'classLevel',   kind: 'text', label: 'Level' },
@@ -318,14 +367,14 @@ export const STAGE_COLUMN_MAP: Record<StageKey, StageColumns> = {
   },
   supplies: {
     statusCol: 'suppliesStatus', remarksCol: 'suppliesRemarks',
-    updatedDateCol: 'suppliesUpdatedDate', updatedByCol: 'suppliesUpdatedBy',
+    updatedDateCol: 'suppliesUpdatedDate', updatedByCol: 'suppliesUpdatedby',
     extras: [
       { fieldKey: 'claimedDate', columnName: 'suppliesClaimedDate', kind: 'date', label: 'Claimed date' },
     ],
   },
   orientation: {
     statusCol: 'orientationStatus', remarksCol: 'orientationRemarks',
-    updatedDateCol: 'orientationUpdatedDate', updatedByCol: 'orientationUpdatedBy',
+    updatedDateCol: 'orientationUpdatedDate', updatedByCol: 'orientationUpdateby',
     extras: [
       { fieldKey: 'scheduleDate', columnName: 'orientationScheduleDate', kind: 'date', label: 'Schedule date' },
     ],

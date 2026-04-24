@@ -1,21 +1,28 @@
-import Link from 'next/link';
-import { redirect } from 'next/navigation';
 import {
+  AlertTriangle,
   ArrowRight,
   ChartBar,
   GraduationCap,
   History,
   Tag,
   UserMinus,
+  UserPlus,
   Users,
-} from 'lucide-react';
+} from "lucide-react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { AySwitcher } from '@/components/admissions/ay-switcher';
-import { DocumentBacklogChart } from '@/components/sis/document-backlog-chart';
-import { ExpiringDocumentsPanel } from '@/components/sis/expiring-documents-panel';
-import { LevelDistributionChart } from '@/components/sis/level-distribution-chart';
-import { RecentActivityFeed } from '@/components/sis/recent-activity-feed';
-import { Badge } from '@/components/ui/badge';
+import { ActionList, type ActionItem } from "@/components/dashboard/action-list";
+import { TrendChart } from "@/components/dashboard/charts/trend-chart";
+import { ComparisonToolbar } from "@/components/dashboard/comparison-toolbar";
+import { DashboardHero } from "@/components/dashboard/dashboard-hero";
+import { InsightsPanel } from "@/components/dashboard/insights-panel";
+import { MetricCard } from "@/components/dashboard/metric-card";
+import { DocumentBacklogChart } from "@/components/sis/document-backlog-chart";
+import { ExpiringDocumentsPanel } from "@/components/sis/expiring-documents-panel";
+import { LevelDistributionChart } from "@/components/sis/level-distribution-chart";
+import { PipelineStageChart } from "@/components/sis/pipeline-stage-chart";
+import { RecentActivityFeed } from "@/components/sis/recent-activity-feed";
 import {
   Card,
   CardAction,
@@ -24,18 +31,25 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { PageShell } from '@/components/ui/page-shell';
-import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+} from "@/components/ui/card";
+import { PageShell } from "@/components/ui/page-shell";
+import { getCurrentAcademicYear, listAyCodes as listAcademicAyCodes } from "@/lib/academic-year";
+import { recordsInsights } from "@/lib/dashboard/insights";
+import { formatRangeLabel, resolveRange, type DashboardSearchParams } from "@/lib/dashboard/range";
+import { getDashboardWindows } from "@/lib/dashboard/windows";
 import {
   getDocumentValidationBacklog,
+  getEnrollmentVelocityRange,
   getExpiringDocuments,
   getLevelDistribution,
+  getPipelineStageBreakdown,
   getRecentSisActivity,
-} from '@/lib/sis/dashboard';
-import { getSisDashboardSummary } from '@/lib/sis/queries';
-import { getSessionUser } from '@/lib/supabase/server';
-import { createServiceClient } from '@/lib/supabase/service';
+  getRecordsKpisRange,
+  getWithdrawalVelocityRange,
+} from "@/lib/sis/dashboard";
+import { getSisDashboardSummary } from "@/lib/sis/queries";
+import { getSessionUser } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 
 const EXPIRY_WINDOW_DAYS = 60;
 
@@ -43,20 +57,16 @@ const EXPIRY_WINDOW_DAYS = 60;
 // analytics live on /admissions. This page surfaces the permanent
 // record view: who's enrolled, doc validation backlog, document
 // expiry, level distribution, recent edits.
-export default async function RecordsDashboard({
-  searchParams,
-}: {
-  searchParams: Promise<{ ay?: string }>;
-}) {
+export default async function RecordsDashboard({ searchParams }: { searchParams: Promise<DashboardSearchParams> }) {
   const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
+  if (!sessionUser) redirect("/login");
   if (
-    sessionUser.role !== 'registrar' &&
-    sessionUser.role !== 'school_admin' &&
-    sessionUser.role !== 'admin' &&
-    sessionUser.role !== 'superadmin'
+    sessionUser.role !== "registrar" &&
+    sessionUser.role !== "school_admin" &&
+    sessionUser.role !== "admin" &&
+    sessionUser.role !== "superadmin"
   ) {
-    redirect('/');
+    redirect("/");
   }
 
   const service = createServiceClient();
@@ -69,64 +79,151 @@ export default async function RecordsDashboard({
     );
   }
 
-  const { ay: ayParam } = await searchParams;
-  const ayCodes = await listAyCodes(service);
+  const resolvedSearch = await searchParams;
+  const ayParam = typeof resolvedSearch.ay === "string" ? resolvedSearch.ay : undefined;
+  const ayCodes = await listAcademicAyCodes(service);
   const selectedAy = ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
   const isCurrentAy = selectedAy === currentAy.ay_code;
 
-  const [summary, docBacklog, levels, expiring, activity] = await Promise.all([
-    getSisDashboardSummary(selectedAy),
-    getDocumentValidationBacklog(selectedAy),
-    getLevelDistribution(selectedAy),
-    getExpiringDocuments(selectedAy, EXPIRY_WINDOW_DAYS, 8),
-    getRecentSisActivity(8),
-  ]);
+  const windows = await getDashboardWindows(selectedAy);
+  const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
+
+  const [summary, docBacklog, levels, expiring, activity, pipelineStages, kpisResult, enrolVelocity, withdrawVelocity] =
+    await Promise.all([
+      getSisDashboardSummary(selectedAy),
+      getDocumentValidationBacklog(selectedAy),
+      getLevelDistribution(selectedAy),
+      getExpiringDocuments(selectedAy, EXPIRY_WINDOW_DAYS, 8),
+      getRecentSisActivity(8),
+      getPipelineStageBreakdown(selectedAy),
+      getRecordsKpisRange(rangeInput),
+      getEnrollmentVelocityRange(rangeInput),
+      getWithdrawalVelocityRange(rangeInput),
+    ]);
+
+  const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
+
+  const insights = recordsInsights({
+    newEnrollments: kpisResult.current.enrollmentsInRange,
+    withdrawals: kpisResult.current.withdrawalsInRange,
+    newEnrollmentsPrior: kpisResult.comparison.enrollmentsInRange,
+    withdrawalsPrior: kpisResult.comparison.withdrawalsInRange,
+    activeEnrolled: kpisResult.current.activeEnrolled,
+    expiringSoon: kpisResult.current.expiringSoon,
+    enrollmentDelta: kpisResult.delta,
+  });
+
+  // Expiring-doc action list: top N students whose docs expire soonest.
+  const expiringItems: ActionItem[] = expiring.slice(0, 6).map((row) => ({
+    label: row.studentName,
+    sublabel: `${row.slotLabel}`,
+    meta: row.daysUntilExpiry < 0 ? `${Math.abs(row.daysUntilExpiry)}d overdue` : `${row.daysUntilExpiry}d left`,
+    severity: row.daysUntilExpiry < 0 ? "bad" : row.daysUntilExpiry <= 14 ? "warn" : "info",
+    href: `/records/students/by-enrolee/${row.enroleeNumber}`,
+  }));
 
   return (
     <PageShell>
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-3">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Records · Enrolled students
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Student records.
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Permanent cross-year record of every enrolled student. Document backlog,
-            expiring documents, level distribution, and recent edits. Pre-enrolment
-            applications are on the Admissions module.
-          </p>
-        </div>
-        <div className="flex flex-col items-start gap-2 md:items-end">
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-            >
-              {selectedAy}
-            </Badge>
-            {isCurrentAy ? (
-              <Badge className="h-7 border-brand-mint bg-brand-mint/30 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink">
-                Current
-              </Badge>
-            ) : (
-              <Badge
-                variant="outline"
-                className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-              >
-                Historical
-              </Badge>
-            )}
-          </div>
-          <AySwitcher current={selectedAy} options={ayCodes} />
-        </div>
-      </header>
+      <DashboardHero
+        eyebrow="Records · Enrolled students"
+        title="Student records"
+        description="Permanent cross-year record of every enrolled student. Document backlog, expiring documents, level distribution, recent edits. Pre-enrolment applications live on Admissions."
+        badges={[
+          { label: selectedAy },
+          { label: isCurrentAy ? "Current" : "Historical", tone: isCurrentAy ? "mint" : "muted" },
+        ]}
+      />
 
+      <ComparisonToolbar
+        ayCode={selectedAy}
+        ayCodes={ayCodes}
+        range={{ from: rangeInput.from, to: rangeInput.to }}
+        comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+        termWindows={windows.term}
+        ayWindows={windows.ay}
+      />
+
+      <InsightsPanel insights={insights} />
+
+      {/* Range-aware KPIs */}
+      <section className="grid gap-4 xl:grid-cols-4">
+        <MetricCard
+          label="New enrollments"
+          value={kpisResult.current.enrollmentsInRange}
+          icon={UserPlus}
+          intent="default"
+          delta={kpisResult.delta}
+          deltaGoodWhen="up"
+          comparisonLabel={comparisonLabel}
+          sparkline={enrolVelocity.current.slice(-14)}
+        />
+        <MetricCard
+          label="Withdrawals"
+          value={kpisResult.current.withdrawalsInRange}
+          icon={UserMinus}
+          intent={kpisResult.current.withdrawalsInRange > 0 ? "warning" : "good"}
+          deltaGoodWhen="down"
+          subtext={`${kpisResult.comparison.withdrawalsInRange} prior`}
+        />
+        <MetricCard
+          label="Active enrolled"
+          value={kpisResult.current.activeEnrolled}
+          icon={GraduationCap}
+          intent="good"
+          subtext="Total headcount"
+        />
+        <MetricCard
+          label="Docs expiring ≤60d"
+          value={kpisResult.current.expiringSoon}
+          icon={AlertTriangle}
+          intent={kpisResult.current.expiringSoon > 0 ? "warning" : "good"}
+          subtext="From end of range"
+        />
+      </section>
+
+      {/* Velocity trends — enrollment + withdrawal side by side */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        {enrolVelocity.current.length > 1 && (
+          <Card>
+            <CardHeader>
+              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                Enrollment velocity
+              </CardDescription>
+              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                New students per day
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TrendChart label="Enrollments" current={enrolVelocity.current} comparison={enrolVelocity.comparison} />
+            </CardContent>
+          </Card>
+        )}
+        {withdrawVelocity.current.length > 1 && (
+          <Card>
+            <CardHeader>
+              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                Withdrawal velocity
+              </CardDescription>
+              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                Withdrawals per day
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TrendChart
+                label="Withdrawals"
+                current={withdrawVelocity.current}
+                comparison={withdrawVelocity.comparison}
+              />
+            </CardContent>
+          </Card>
+        )}
+      </section>
+
+      {/* All-time AY counters — dashboard-01 SectionCards pattern */}
       <section className="@container/main">
         <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
           <SummaryStat
-            label="Enrolled"
+            label="Enrolled (all)"
             value={summary.enrolled}
             icon={GraduationCap}
             footnote="Active + conditional"
@@ -138,7 +235,7 @@ export default async function RecordsDashboard({
             footnote="All stages — see Admissions"
           />
           <SummaryStat
-            label="Withdrawn"
+            label="Withdrawn (all)"
             value={summary.withdrawn}
             icon={UserMinus}
             footnote="Left during the year"
@@ -182,15 +279,25 @@ export default async function RecordsDashboard({
         </div>
       </section>
 
+      {/* Spec §2 row 8 — pipeline breakdown + expiring docs panel (2+1) */}
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <ExpiringDocumentsPanel
-            rows={expiring}
-            ayCode={selectedAy}
-            windowDays={EXPIRY_WINDOW_DAYS}
-          />
+          <PipelineStageChart data={pipelineStages} />
+        </div>
+        <div className="lg:col-span-1">
+          <ExpiringDocumentsPanel rows={expiring} ayCode={selectedAy} windowDays={EXPIRY_WINDOW_DAYS} />
         </div>
       </section>
+
+      {/* Spec §2 row 9 — action list for docs to collect */}
+      <ActionList
+        id="recent-withdrawals"
+        title="Documents to collect"
+        description="Students with documents expiring soon or already overdue."
+        items={expiringItems}
+        emptyLabel="No documents expiring in range."
+        viewAllHref="/p-files"
+      />
 
       <RecentActivityFeed rows={activity} />
 
@@ -226,7 +333,7 @@ function SummaryStat({
           {label}
         </CardDescription>
         <CardTitle className="font-serif text-[32px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]">
-          {value.toLocaleString('en-SG')}
+          {value.toLocaleString("en-SG")}
         </CardTitle>
         <CardAction>
           <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
@@ -253,8 +360,7 @@ function QuickLink({
   return (
     <Link
       href={href}
-      className="group flex items-start gap-4 rounded-xl border border-hairline bg-card p-5 transition-all hover:-translate-y-0.5 hover:border-brand-indigo/40 hover:shadow-sm"
-    >
+      className="group flex items-start gap-4 rounded-xl border border-hairline bg-card p-5 transition-all hover:-translate-y-0.5 hover:border-brand-indigo/40 hover:shadow-sm">
       <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
         <Icon className="size-4" />
       </div>

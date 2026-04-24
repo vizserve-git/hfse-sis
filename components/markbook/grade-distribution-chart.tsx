@@ -23,8 +23,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 
-// Mastery band colors — keyed to the DepEd tiers. Failing = destructive,
-// outstanding = chart-5 (green). Uses design-system tokens only.
 const BAND_FILL: Record<string, string> = {
   dnm: 'var(--destructive)',
   fs: 'var(--chart-3)',
@@ -72,49 +70,35 @@ export function GradeDistributionChart({
             </p>
           </div>
         ) : (
-          <div className="h-[340px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 16, right: 12, bottom: 8, left: 0 }}>
-                <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="label"
-                  stroke="var(--muted-foreground)"
-                  fontSize={11}
-                  tickLine={false}
-                  interval={0}
-                />
-                <YAxis
-                  stroke="var(--muted-foreground)"
-                  fontSize={12}
-                  allowDecimals={false}
-                  tickLine={false}
-                />
-                <Tooltip
-                  cursor={{ fill: 'var(--accent)' }}
-                  contentStyle={{
-                    background: 'var(--popover)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius)',
-                    color: 'var(--popover-foreground)',
-                    fontSize: 12,
-                  }}
-                />
-                <Bar dataKey="count" name="Students" radius={[4, 4, 0, 0]}>
-                  {data.map((d) => (
-                    <Cell key={d.key} fill={BAND_FILL[d.key] ?? 'var(--chart-1)'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <ResponsiveContainer width="100%" height={340}>
+            <BarChart data={data} margin={{ top: 16, right: 12, bottom: 8, left: 0 }}>
+              <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
+              <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} interval={0} />
+              <YAxis stroke="var(--muted-foreground)" fontSize={12} allowDecimals={false} tickLine={false} />
+              <Tooltip
+                cursor={{ fill: 'var(--accent)' }}
+                contentStyle={{
+                  background: 'var(--popover)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  color: 'var(--popover-foreground)',
+                  fontSize: 12,
+                }}
+              />
+              <Bar dataKey="count" name="Students" radius={[4, 4, 0, 0]}>
+                {data.map((d) => (
+                  <Cell key={d.key} fill={BAND_FILL[d.key] ?? 'var(--chart-1)'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         )}
       </CardContent>
       {!empty && (
         <CardFooter className="border-t border-border px-6 py-3 text-xs text-muted-foreground">
           <span>
             <span className="font-semibold text-foreground tabular-nums">{pct}%</span> of{' '}
-            <span className="tabular-nums">{total.toLocaleString('en-SG')}</span> grades meet
-            expectations (≥ 75)
+            <span className="tabular-nums">{total.toLocaleString('en-SG')}</span> grades meet expectations (≥ 75)
           </span>
         </CardFooter>
       )}

@@ -8,38 +8,38 @@
      (see the --av-* block below) so every existing utility like
      text-foreground / border-border / bg-primary automatically inherits
      the project's corporate palette — no per-file refactor needed. */
-  --background: #FFFFFF;
-  --foreground: #0F172A;         /* was gray; now ink */
-  --card: #FFFFFF;
-  --card-foreground: #0F172A;
-  --popover: #FFFFFF;
-  --popover-foreground: #0F172A;
-  --primary: #4F46E5;            /* was mid blue; now brand indigo */
-  --primary-foreground: #FFFFFF;
-  --secondary: #F1F5F9;
+  --background: #ffffff;
+  --foreground: #0f172a; /* was gray; now ink */
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #4f46e5; /* was mid blue; now brand indigo */
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
   --secondary-foreground: #334155;
-  --muted: #F8FAFC;              /* page canvas — very subtle slate */
-  --muted-foreground: #64748B;   /* was gray; now ink-4 */
-  --accent: #EEF2FF;             /* subtle indigo wash for hovers */
-  --accent-foreground: #4338CA;
+  --muted: #f8fafc; /* page canvas — very subtle slate */
+  --muted-foreground: #64748b; /* was gray; now ink-4 */
+  --accent: #eef2ff; /* subtle indigo wash for hovers */
+  --accent-foreground: #4338ca;
   --destructive: oklch(0.6368 0.2078 25.3313);
-  --destructive-foreground: #FFFFFF;
-  --border: #E2E8F0;             /* was gray; now hairline */
-  --input: #E2E8F0;
-  --ring: #4F46E5;               /* was mid blue; now brand indigo */
-  --chart-1: #4F46E5;            /* brand indigo */
-  --chart-2: #6366F1;
-  --chart-3: #818CF8;
-  --chart-4: #38BDF8;            /* sky */
-  --chart-5: #A5F3B7;            /* mint */
-  --sidebar: #F8FAFC;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0; /* was gray; now hairline */
+  --input: #e2e8f0;
+  --ring: #4f46e5; /* was mid blue; now brand indigo */
+  --chart-1: #4f46e5; /* brand indigo */
+  --chart-2: #6366f1;
+  --chart-3: #818cf8;
+  --chart-4: #38bdf8; /* sky */
+  --chart-5: #a5f3b7; /* mint */
+  --sidebar: #f8fafc;
   --sidebar-foreground: #334155;
-  --sidebar-primary: #4F46E5;
-  --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #EEF2FF;
-  --sidebar-accent-foreground: #4338CA;
-  --sidebar-border: #E2E8F0;
-  --sidebar-ring: #4F46E5;
+  --sidebar-primary: #4f46e5;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eef2ff;
+  --sidebar-accent-foreground: #4338ca;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #4f46e5;
   --font-sans: Inter, sans-serif;
   --font-serif: Source Serif 4, serif;
   --font-mono: JetBrains Mono, monospace;
@@ -63,27 +63,30 @@
 
   /* Aurora Vault — auth / high-trust surfaces.
      Raw values use the --av-* prefix to avoid self-reference with @theme inline. */
-  --av-navy: #0B1120;
-  --av-indigo: #4F46E5;
-  --av-indigo-deep: #4338CA;
-  --av-indigo-light: #5B52ED;
-  --av-indigo-soft: #818CF8;
-  --av-sky: #38BDF8;
-  --av-mint: #A5F3B7;
-  --av-amber: #F59E0B;
-  --av-amber-light: #FEF3C7;
-  --av-ink: #0F172A;
+  --av-navy: #0b1120;
+  --av-indigo: #4f46e5;
+  --av-indigo-deep: #4338ca;
+  --av-indigo-light: #5b52ed;
+  --av-indigo-soft: #818cf8;
+  --av-sky: #38bdf8;
+  --av-mint: #a5f3b7;
+  --av-amber: #f59e0b;
+  --av-amber-light: #fef3c7;
+  --av-ink: #0f172a;
   --av-ink-2: #334155;
   --av-ink-3: #475569;
-  --av-ink-4: #64748B;
-  --av-ink-5: #94A3B8;
-  --av-hairline: #E2E8F0;
-  --av-hairline-strong: #CBD5E1;
+  --av-ink-4: #64748b;
+  --av-ink-5: #94a3b8;
+  --av-hairline: #e2e8f0;
+  --av-hairline-strong: #cbd5e1;
 
   --av-shadow-input: 0 1px 2px rgba(15, 23, 42, 0.04);
   --av-shadow-brand-tile: inset 0 1px 0 0 rgba(255, 255, 255, 0.2), 0 4px 12px -4px rgba(79, 70, 229, 0.5);
-  --av-shadow-button: inset 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(15, 23, 42, 0.08), 0 8px 24px -8px rgba(79, 70, 229, 0.55);
-  --av-shadow-button-hover: inset 0 1px 0 0 rgba(255, 255, 255, 0.22), 0 2px 4px rgba(15, 23, 42, 0.1), 0 12px 28px -10px rgba(79, 70, 229, 0.65);
+  --av-shadow-button:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(15, 23, 42, 0.08), 0 8px 24px -8px rgba(79, 70, 229, 0.55);
+  --av-shadow-button-hover:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.22), 0 2px 4px rgba(15, 23, 42, 0.1),
+    0 12px 28px -10px rgba(79, 70, 229, 0.65);
   --av-shadow-button-active: inset 0 1px 0 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(15, 23, 42, 0.1);
   --av-shadow-glass-card: 0 20px 60px -20px rgba(0, 0, 0, 0.6), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
 }

@@ -353,19 +353,34 @@ export type StatusRow = {
   orientationUpdatedBy: string | null;
 };
 
+// PostgREST `select=` aliases let us keep clean camelCase field names on
+// StatusRow (e.g. `registrationUpdatedBy`) while pulling from the actual
+// production column names, which are inconsistent per the parent-portal
+// frozen schema (`registrationUpdateDate` missing a "d",
+// `registrationUpdatedby` lowercase "b", `orientationUpdateby` missing both).
+// Every entry with a colon is `ts_alias:actual_db_column`. Do not "fix" the
+// rhs — it matches what's in `ay{YYYY}_enrolment_status` per
+// docs/context/10a-parent-portal-ddl.md.
 const DETAIL_STATUS_COLUMNS = [
   'enroleeNumber', 'enroleeType', 'enrolmentDate',
   'applicationStatus', 'applicationRemarks', 'applicationUpdatedDate', 'applicationUpdatedBy',
   'registrationStatus', 'registrationInvoice', 'registrationPaymentDate', 'registrationRemarks',
-  'registrationUpdatedDate', 'registrationUpdatedBy',
-  'documentStatus', 'documentRemarks', 'documentUpdatedDate', 'documentUpdatedBy',
+  'registrationUpdatedDate:registrationUpdateDate', 'registrationUpdatedBy:registrationUpdatedby',
+  'documentStatus', 'documentRemarks', 'documentUpdatedDate',
+  'documentUpdatedBy:documentUpdatedby',
   'assessmentStatus', 'assessmentSchedule', 'assessmentGradeMath', 'assessmentGradeEnglish', 'assessmentMedical',
-  'assessmentRemarks', 'assessmentUpdatedDate', 'assessmentUpdatedBy',
-  'contractStatus', 'contractRemarks', 'contractUpdatedDate', 'contractUpdatedBy',
-  'feeStatus', 'feeInvoice', 'feePaymentDate', 'feeStartDate', 'feeRemarks', 'feeUpdatedDate', 'feeUpdatedBy',
-  'classStatus', 'classAY', 'classLevel', 'classSection', 'classRemarks', 'classUpdatedDate', 'classUpdatedBy',
-  'suppliesStatus', 'suppliesClaimedDate', 'suppliesRemarks', 'suppliesUpdatedDate', 'suppliesUpdatedBy',
-  'orientationStatus', 'orientationScheduleDate', 'orientationRemarks', 'orientationUpdatedDate', 'orientationUpdatedBy',
+  'assessmentRemarks', 'assessmentUpdatedDate',
+  'assessmentUpdatedBy:assessmentUpdatedby',
+  'contractStatus', 'contractRemarks', 'contractUpdatedDate',
+  'contractUpdatedBy:contractUpdatedby',
+  'feeStatus', 'feeInvoice', 'feePaymentDate', 'feeStartDate', 'feeRemarks', 'feeUpdatedDate',
+  'feeUpdatedBy:feeUpdatedby',
+  'classStatus', 'classAY', 'classLevel', 'classSection', 'classRemarks', 'classUpdatedDate',
+  'classUpdatedBy:classUpdatedby',
+  'suppliesStatus', 'suppliesClaimedDate', 'suppliesRemarks', 'suppliesUpdatedDate',
+  'suppliesUpdatedBy:suppliesUpdatedby',
+  'orientationStatus', 'orientationScheduleDate', 'orientationRemarks', 'orientationUpdatedDate',
+  'orientationUpdatedBy:orientationUpdateby',
 ].join(', ');
 
 export type DocumentSlot = {
@@ -402,7 +417,23 @@ export type StudentDetail = {
   application: ApplicationRow;
   status: StatusRow | null;
   documents: DocumentSlot[];
+  // true when the status-row lookup returned a PostgREST error (typically
+  // duplicate rows — `_status.enroleeNumber` has no unique constraint in the
+  // DDL, so >1 row makes `maybeSingle` fail). Surfaced in the UI so we don't
+  // paint a misleading "pipeline not started" dead end for real, populated
+  // enrolees whose status row just happens to be duplicated.
+  statusFetchError: boolean;
+  docsFetchError: boolean;
 };
+
+// Columns guaranteed to exist on every historical `ay{YYYY}_enrolment_applications`
+// table across the parent portal's schema evolution. Used as the fallback
+// select when the full DETAIL_APP_COLUMNS query errors on a legacy AY that's
+// missing newer columns (e.g. `classType`, `paymentOption`, `contractSignatory`
+// were added later). Keeps the admissions detail page renderable with basic
+// identity data instead of 404ing.
+const MINIMAL_APP_COLUMNS =
+  'enroleeNumber, studentNumber, firstName, middleName, lastName, enroleeFullName, levelApplied';
 
 export async function getStudentDetail(ayCode: string, enroleeNumber: string): Promise<StudentDetail | null> {
   const prefix = prefixFor(ayCode);
@@ -414,13 +445,57 @@ export async function getStudentDetail(ayCode: string, enroleeNumber: string): P
     supabase.from(`${prefix}_enrolment_documents`).select(DOCUMENT_COLUMNS).eq('enroleeNumber', enroleeNumber).maybeSingle(),
   ]);
 
+  // App-row fallback: if the full SELECT errored (typically because the
+  // historical AY's table lacks columns that were added in a later schema
+  // version), retry with only the always-present minimal columns so the
+  // page still renders with identity data. The specific column-not-found
+  // error is logged so an operator can ALTER TABLE to add missing cols.
+  let appData: unknown = appRes.error ? null : appRes.data;
   if (appRes.error) {
-    console.error('[sis] getStudentDetail apps fetch failed:', appRes.error.message);
-    return null;
+    console.warn(
+      '[sis] getStudentDetail full apps select failed, retrying minimal:',
+      appRes.error.message,
+    );
+    const fallback = await supabase
+      .from(`${prefix}_enrolment_applications`)
+      .select(MINIMAL_APP_COLUMNS)
+      .eq('enroleeNumber', enroleeNumber)
+      .maybeSingle();
+    if (fallback.error) {
+      console.error(
+        '[sis] getStudentDetail minimal apps select also failed:',
+        fallback.error.message,
+      );
+      return null;
+    }
+    appData = fallback.data;
   }
-  if (!appRes.data) return null;
+  if (!appData) return null;
 
-  const app = appRes.data as unknown as ApplicationRow;
+  // Don't swallow status/docs errors — they typically mean duplicate rows
+  // (enroleeNumber isn't unique on `_status` / `_documents` per migration 025).
+  // The page still needs the applications row to render, so we keep going and
+  // surface the error via the two flags on StudentDetail.
+  const statusFetchError = statusRes.error !== null && statusRes.error !== undefined;
+  const docsFetchError = docsRes.error !== null && docsRes.error !== undefined;
+  // console.warn, not console.error — Next.js 16's dev overlay surfaces
+  // console.error as a full runtime-error modal. The page still renders
+  // (timeline shows null markers + amber alert), so this is a recoverable
+  // data-quality issue, not a crash.
+  if (statusFetchError) {
+    console.warn(
+      '[sis] getStudentDetail status fetch failed:',
+      statusRes.error?.message,
+    );
+  }
+  if (docsFetchError) {
+    console.warn(
+      '[sis] getStudentDetail documents fetch failed:',
+      docsRes.error?.message,
+    );
+  }
+
+  const app = appData as unknown as ApplicationRow;
   const status = (statusRes.data ?? null) as StatusRow | null;
   const docsRow = (docsRes.data ?? null) as Record<string, unknown> | null;
 
@@ -438,6 +513,8 @@ export async function getStudentDetail(ayCode: string, enroleeNumber: string): P
     application: app,
     status,
     documents,
+    statusFetchError,
+    docsFetchError,
   };
 }
 

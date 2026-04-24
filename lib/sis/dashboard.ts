@@ -3,6 +3,15 @@ import { unstable_cache } from 'next/cache';
 import { DOCUMENT_SLOTS, resolveStatus, type DocumentGroup } from '@/lib/p-files/document-config';
 import { STAGE_COLUMN_MAP, STAGE_KEYS, STAGE_LABELS, type StageKey } from '@/lib/schemas/sis';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
+import { createServiceClient } from '@/lib/supabase/service';
+import {
+  computeDelta,
+  daysInRange,
+  parseLocalDate,
+  toISODate,
+  type RangeInput,
+  type RangeResult,
+} from '@/lib/dashboard/range';
 
 // Records dashboard aggregators — daily-ops lens.
 //
@@ -482,4 +491,275 @@ const loadRecentSisActivity = unstable_cache(
 
 export function getRecentSisActivity(limit: number = 8): Promise<RecentActivityRow[]> {
   return loadRecentSisActivity(limit);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Range-aware siblings (new).
+// ──────────────────────────────────────────────────────────────────────────
+
+export type RecordsRangeKpis = {
+  enrollmentsInRange: number;
+  withdrawalsInRange: number;
+  activeEnrolled: number;
+  expiringSoon: number;
+};
+
+async function loadRecordsKpisForRange(input: RangeInput): Promise<RecordsRangeKpis> {
+  const service = createServiceClient();
+  const admissions = createAdmissionsClient();
+  const prefix = prefixFor(input.ayCode);
+
+  const [enrolRes, withdrawRes, activeRes, docsRes] = await Promise.all([
+    service
+      .from('section_students')
+      .select('id', { count: 'exact', head: true })
+      .eq('enrollment_status', 'active')
+      .gte('enrollment_date', input.from)
+      .lte('enrollment_date', input.to),
+    service
+      .from('section_students')
+      .select('id', { count: 'exact', head: true })
+      .eq('enrollment_status', 'withdrawn')
+      .gte('withdrawal_date', input.from)
+      .lte('withdrawal_date', input.to),
+    service
+      .from('section_students')
+      .select('id', { count: 'exact', head: true })
+      .eq('enrollment_status', 'active'),
+    admissions
+      .from(`${prefix}_enrolment_documents`)
+      .select(
+        [
+          'enroleeNumber',
+          ...DOCUMENT_SLOTS.flatMap((s) =>
+            s.expires ? [`${s.key}Expiry`] : [],
+          ),
+        ].join(', '),
+      ),
+  ]);
+
+  type DocRow = Record<string, string | null>;
+  const endDate = parseLocalDate(input.to) ?? new Date();
+  const windowEnd = new Date(endDate);
+  windowEnd.setDate(windowEnd.getDate() + 60);
+  let expiringSoon = 0;
+  for (const row of (docsRes.data ?? []) as unknown as DocRow[]) {
+    for (const slot of DOCUMENT_SLOTS) {
+      if (!slot.expires) continue;
+      const exp = row[`${slot.key}Expiry`];
+      if (!exp) continue;
+      const d = parseLocalDate(exp);
+      if (d && d >= endDate && d <= windowEnd) expiringSoon += 1;
+    }
+  }
+
+  return {
+    enrollmentsInRange: enrolRes.count ?? 0,
+    withdrawalsInRange: withdrawRes.count ?? 0,
+    activeEnrolled: activeRes.count ?? 0,
+    expiringSoon,
+  };
+}
+
+async function loadRecordsKpisRangeUncached(
+  input: RangeInput,
+): Promise<RangeResult<RecordsRangeKpis>> {
+  const [current, comparison] = await Promise.all([
+    loadRecordsKpisForRange(input),
+    loadRecordsKpisForRange({
+      ayCode: input.ayCode,
+      from: input.cmpFrom,
+      to: input.cmpTo,
+      cmpFrom: input.cmpFrom,
+      cmpTo: input.cmpTo,
+    }),
+  ]);
+  return {
+    current,
+    comparison,
+    delta: computeDelta(current.enrollmentsInRange, comparison.enrollmentsInRange),
+    range: { from: input.from, to: input.to },
+    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+  };
+}
+
+export function getRecordsKpisRange(
+  input: RangeInput,
+): Promise<RangeResult<RecordsRangeKpis>> {
+  return unstable_cache(
+    loadRecordsKpisRangeUncached,
+    ['sis', 'records-kpis-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
+  )(input);
+}
+
+// Enrollment + withdrawal velocity — daily-bucketed.
+
+export type VelocityPoint = { x: string; y: number };
+
+function bucketByDay(rows: { ts: string }[], from: string, to: string): VelocityPoint[] {
+  const fromDate = parseLocalDate(from);
+  const toDate = parseLocalDate(to);
+  if (!fromDate || !toDate) return [];
+  const length = daysInRange({ from, to });
+  const buckets = new Array(length).fill(0) as number[];
+  const labels: string[] = [];
+  for (let i = 0; i < length; i += 1) {
+    const d = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate() + i);
+    labels.push(toISODate(d));
+  }
+  for (const row of rows) {
+    const date = row.ts.slice(0, 10);
+    const idx = labels.indexOf(date);
+    if (idx >= 0) buckets[idx] += 1;
+  }
+  return labels.map((x, i) => ({ x, y: buckets[i] }));
+}
+
+async function loadEnrollmentVelocityRangeUncached(
+  input: RangeInput,
+): Promise<RangeResult<VelocityPoint[]>> {
+  const service = createServiceClient();
+  const earliest = input.cmpFrom < input.from ? input.cmpFrom : input.from;
+  const latest = input.to > input.cmpTo ? input.to : input.cmpTo;
+
+  const { data } = await service
+    .from('section_students')
+    .select('enrollment_date')
+    .eq('enrollment_status', 'active')
+    .gte('enrollment_date', earliest)
+    .lte('enrollment_date', latest);
+
+  type Row = { enrollment_date: string };
+  const rows = ((data ?? []) as Row[])
+    .filter((r) => r.enrollment_date)
+    .map((r) => ({ ts: r.enrollment_date }));
+  const current = bucketByDay(rows, input.from, input.to);
+  const comparison = bucketByDay(rows, input.cmpFrom, input.cmpTo);
+  const currentTotal = current.reduce((s, p) => s + p.y, 0);
+  const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
+  return {
+    current,
+    comparison,
+    delta: computeDelta(currentTotal, comparisonTotal),
+    range: { from: input.from, to: input.to },
+    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+  };
+}
+
+export function getEnrollmentVelocityRange(
+  input: RangeInput,
+): Promise<RangeResult<VelocityPoint[]>> {
+  return unstable_cache(
+    loadEnrollmentVelocityRangeUncached,
+    ['sis', 'enrollment-velocity', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
+  )(input);
+}
+
+// Withdrawal velocity — symmetric sibling to enrollment velocity.
+// Reads `section_students.withdrawal_date` for rows in the 'withdrawn'
+// status, range-scoped and bucketed daily.
+
+async function loadWithdrawalVelocityRangeUncached(
+  input: RangeInput,
+): Promise<RangeResult<VelocityPoint[]>> {
+  const service = createServiceClient();
+  const earliest = input.cmpFrom < input.from ? input.cmpFrom : input.from;
+  const latest = input.to > input.cmpTo ? input.to : input.cmpTo;
+
+  const { data } = await service
+    .from('section_students')
+    .select('withdrawal_date')
+    .eq('enrollment_status', 'withdrawn')
+    .gte('withdrawal_date', earliest)
+    .lte('withdrawal_date', latest);
+
+  type Row = { withdrawal_date: string };
+  const rows = ((data ?? []) as Row[])
+    .filter((r) => r.withdrawal_date)
+    .map((r) => ({ ts: r.withdrawal_date }));
+  const current = bucketByDay(rows, input.from, input.to);
+  const comparison = bucketByDay(rows, input.cmpFrom, input.cmpTo);
+  const currentTotal = current.reduce((s, p) => s + p.y, 0);
+  const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
+  return {
+    current,
+    comparison,
+    delta: computeDelta(currentTotal, comparisonTotal),
+    range: { from: input.from, to: input.to },
+    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+  };
+}
+
+export function getWithdrawalVelocityRange(
+  input: RangeInput,
+): Promise<RangeResult<VelocityPoint[]>> {
+  return unstable_cache(
+    loadWithdrawalVelocityRangeUncached,
+    ['sis', 'withdrawal-velocity', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
+  )(input);
+}
+
+// Audit activity by module — for SIS admin dashboard.
+
+export type AuditModulePoint = {
+  module: string;
+  count: number;
+};
+
+async function loadAuditActivityByModuleUncached(
+  input: RangeInput,
+): Promise<RangeResult<AuditModulePoint[]>> {
+  const service = createServiceClient();
+  const modules: Array<{ key: string; label: string }> = [
+    { key: 'sheet.', label: 'Markbook — sheet' },
+    { key: 'entry.', label: 'Markbook — entry' },
+    { key: 'pfile.', label: 'P-Files' },
+    { key: 'sis.', label: 'SIS' },
+    { key: 'attendance.', label: 'Attendance' },
+    { key: 'evaluation.', label: 'Evaluation' },
+  ];
+
+  async function countsFor(from: string, to: string): Promise<AuditModulePoint[]> {
+    // Preserve module order (indexed results), so callers can align
+    // current[i] to comparison[i] deterministically.
+    const results = await Promise.all(
+      modules.map(async (m) => {
+        const { count } = await service
+          .from('audit_log')
+          .select('id', { count: 'exact', head: true })
+          .like('action', `${m.key}%`)
+          .gte('created_at', `${from}T00:00:00+08:00`)
+          .lte('created_at', `${to}T23:59:59+08:00`);
+        return { module: m.label, count: count ?? 0 };
+      }),
+    );
+    return results;
+  }
+
+  const [current, comparison] = await Promise.all([
+    countsFor(input.from, input.to),
+    countsFor(input.cmpFrom, input.cmpTo),
+  ]);
+  const currentTotal = current.reduce((s, p) => s + p.count, 0);
+  const comparisonTotal = comparison.reduce((s, p) => s + p.count, 0);
+  return {
+    current,
+    comparison,
+    delta: computeDelta(currentTotal, comparisonTotal),
+    range: { from: input.from, to: input.to },
+    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+  };
+}
+
+export function getAuditActivityByModule(
+  input: RangeInput,
+): Promise<RangeResult<AuditModulePoint[]>> {
+  return unstable_cache(
+    loadAuditActivityByModuleUncached,
+    ['sis', 'audit-by-module', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    { tags: ['sis'], revalidate: 120 },
+  )(input);
 }

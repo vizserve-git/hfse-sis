@@ -6,13 +6,21 @@ import { useRouter } from "next/navigation";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { isRouteAllowed, type Role } from "@/lib/auth/roles";
 
+// Ordered by student lifecycle:
+//   1. Admissions — intake (parent submits → admissions processes)
+//   2. Records    — enrolled identity + cross-year placement
+//   3. P-Files    — validated document repository for enrolled students
+//   4. Markbook   — term grading
+//   5. Attendance — daily attendance
+//   6. Evaluation — per-term FCA writeups for report cards
+//   7. SIS Admin  — config, kept last
 const MODULES = [
+  { value: "admissions", label: "Admissions", icon: FileStack, href: "/admissions" },
+  { value: "records", label: "Records", icon: Users, href: "/records" },
+  { value: "p-files", label: "P-Files", icon: FolderOpen, href: "/p-files" },
   { value: "markbook", label: "Markbook", icon: BookOpen, href: "/markbook" },
   { value: "attendance", label: "Attendance", icon: CalendarCheck, href: "/attendance" },
   { value: "evaluation", label: "Evaluation", icon: ClipboardCheck, href: "/evaluation" },
-  { value: "p-files", label: "P-Files", icon: FolderOpen, href: "/p-files" },
-  { value: "admissions", label: "Admissions", icon: FileStack, href: "/admissions" },
-  { value: "records", label: "Records", icon: Users, href: "/records" },
   { value: "sis", label: "SIS Admin", icon: ShieldCheck, href: "/sis" },
 ] as const;
 

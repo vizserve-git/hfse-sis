@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   getCalendarEventsForTerm,
   getSchoolCalendarForTerm,
@@ -191,13 +192,13 @@ export default async function SectionAttendancePage({
         <div className="flex flex-wrap items-center gap-2">
           <Badge
             variant="outline"
-            className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
+            className="h-7 border-border bg-background px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
           >
             {level?.code ?? ''} · {level?.label ?? ''}
           </Badge>
           {canWriteNc && (
             <Button asChild variant="outline" size="sm" className="gap-1.5">
-              <Link href={`/attendance/calendar?term_id=${selectedTermId}`}>
+              <Link href={`/sis/calendar?term_id=${selectedTermId}`}>
                 <CalendarDays className="size-3.5" />
                 Configure calendar
               </Link>
@@ -208,31 +209,22 @@ export default async function SectionAttendancePage({
 
       {/* Term switcher */}
       {terms.length > 1 && (
-        <nav
-          aria-label="Term"
-          className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-muted/30 p-1"
-        >
-          {terms.map((t) => {
-            const active = t.id === selectedTermId;
-            return (
-              <Link
-                key={t.id}
-                href={`/attendance/${sectionId}?term_id=${t.id}`}
-                className={
-                  'rounded-lg px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors ' +
-                  (active
-                    ? 'bg-background text-foreground shadow-xs'
-                    : 'text-muted-foreground hover:text-foreground')
-                }
-              >
-                {t.label}
-                {t.is_current && (
-                  <span className="ml-1 text-[9px] text-muted-foreground">current</span>
-                )}
-              </Link>
-            );
-          })}
-        </nav>
+        <Tabs value={selectedTermId} aria-label="Term">
+          <TabsList>
+            {terms.map((t) => (
+              <TabsTrigger key={t.id} value={t.id} asChild>
+                <Link href={`/attendance/${sectionId}?term_id=${t.id}`}>
+                  {t.label}
+                  {t.is_current && (
+                    <span className="ml-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                      current
+                    </span>
+                  )}
+                </Link>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       )}
 
       {/* Stats */}

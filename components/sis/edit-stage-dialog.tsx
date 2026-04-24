@@ -26,6 +26,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -109,12 +110,33 @@ export function EditStageDialog({
         },
       );
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? 'Failed to save');
+      if (!res.ok) {
+        // 422 with a `blockers` array = Enrolled-prereq gate. Surface the
+        // human-readable list so admissions knows which stages to finish
+        // before flipping to Enrolled.
+        const blockers = body.blockers as
+          | Array<{ stage: string; current: string | null; expected: string }>
+          | undefined;
+        if (res.status === 422 && Array.isArray(blockers) && blockers.length > 0) {
+          const lines = blockers.map(
+            (b) => `${b.stage}: ${b.current ?? 'not started'} → needs ${b.expected}`,
+          );
+          toast.error(`Can't enroll yet — ${blockers.length} stage${blockers.length === 1 ? '' : 's'} still open`, {
+            description: lines.join(' · '),
+          });
+          return;
+        }
+        throw new Error(body.error ?? 'Failed to save');
+      }
       const changed = body.changed as number | undefined;
+      const classAutoAssigned = body.classAutoAssigned === true;
+      const autoSyncChange = body.autoSync?.change as string | undefined;
       toast.success(
-        changed === 0
-          ? `${STAGE_LABELS[stageKey]} saved (no changes)`
-          : `${STAGE_LABELS[stageKey]} updated`,
+        classAutoAssigned
+          ? `Enrolled · class auto-assigned${autoSyncChange && autoSyncChange !== 'skipped' ? ` · synced to roster` : ''}`
+          : changed === 0
+            ? `${STAGE_LABELS[stageKey]} saved (no changes)`
+            : `${STAGE_LABELS[stageKey]} updated`,
       );
       setOpen(false);
       router.refresh();
@@ -208,12 +230,21 @@ export function EditStageDialog({
                         <FormItem>
                           <FormLabel className="text-xs">{e.label}</FormLabel>
                           <FormControl>
-                            <Input
-                              type={e.kind === 'date' ? 'date' : 'text'}
-                              value={(field.value as string | null) ?? ''}
-                              onChange={(ev) => field.onChange(ev.target.value === '' ? null : ev.target.value)}
-                              placeholder={e.kind === 'date' ? 'YYYY-MM-DD' : ''}
-                            />
+                            {e.kind === 'date' ? (
+                              <DatePicker
+                                value={(field.value as string | null) ?? ''}
+                                onChange={(next) => field.onChange(next === '' ? null : next)}
+                              />
+                            ) : (
+                              <Input
+                                type="text"
+                                value={(field.value as string | null) ?? ''}
+                                onChange={(ev) =>
+                                  field.onChange(ev.target.value === '' ? null : ev.target.value)
+                                }
+                                placeholder=""
+                              />
+                            )}
                           </FormControl>
                           <FormMessage />
                         </FormItem>

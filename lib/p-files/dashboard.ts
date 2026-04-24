@@ -3,6 +3,14 @@ import { unstable_cache } from 'next/cache';
 import { DOCUMENT_SLOTS, resolveStatus } from '@/lib/p-files/document-config';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
+import {
+  computeDelta,
+  daysInRange,
+  parseLocalDate,
+  toISODate,
+  type RangeInput,
+  type RangeResult,
+} from '@/lib/dashboard/range';
 
 // P-Files dashboard aggregators — document-repository lens.
 //
@@ -271,3 +279,218 @@ export type TopMissingSlot = {
   pending: number;
   total: number;
 };
+
+// ──────────────────────────────────────────────────────────────────────────
+// Range-aware siblings (new). Same cache-wrapper pattern; existing fns above
+// stay byte-compatible.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type PFilesRangeKpis = {
+  revisionsInRange: number;
+  expiringSoon: number; // within 60 days from end of range
+  pendingReview: number;
+  totalDocuments: number;
+};
+
+async function loadPFilesKpisForRange(input: RangeInput): Promise<PFilesRangeKpis> {
+  const service = createServiceClient();
+  const admissions = createAdmissionsClient();
+  const prefix = prefixFor(input.ayCode);
+  const fromIso = `${input.from}T00:00:00+08:00`;
+  const toIso = `${input.to}T23:59:59+08:00`;
+
+  const [revRes, docsRes] = await Promise.all([
+    service
+      .from('p_file_revisions')
+      .select('id, status_snapshot', { count: 'exact' })
+      .eq('ay_code', input.ayCode)
+      .gte('replaced_at', fromIso)
+      .lte('replaced_at', toIso),
+    admissions
+      .from(`${prefix}_enrolment_documents`)
+      .select(
+        [
+          'enroleeNumber',
+          ...DOCUMENT_SLOTS.flatMap((s) =>
+            s.expires ? [`${s.key}Status`, `${s.key}Expiry`] : [`${s.key}Status`],
+          ),
+        ].join(', '),
+      ),
+  ]);
+
+  type DocRow = Record<string, string | null>;
+  const docs = (docsRes.data ?? []) as unknown as DocRow[];
+  const endDate = parseLocalDate(input.to) ?? new Date();
+  const sixtyDaysOut = new Date(endDate);
+  sixtyDaysOut.setDate(sixtyDaysOut.getDate() + 60);
+
+  let expiringSoon = 0;
+  let pending = 0;
+  let total = 0;
+
+  for (const row of docs) {
+    for (const slot of DOCUMENT_SLOTS) {
+      const status = row[`${slot.key}Status`];
+      if (!status) continue;
+      total += 1;
+      if (status === 'pending' || status === 'uploaded') pending += 1;
+      if (slot.expires) {
+        const expiry = row[`${slot.key}Expiry`];
+        if (expiry) {
+          const exp = parseLocalDate(expiry);
+          if (exp && exp >= endDate && exp <= sixtyDaysOut) expiringSoon += 1;
+        }
+      }
+    }
+  }
+
+  return {
+    revisionsInRange: revRes.count ?? 0,
+    expiringSoon,
+    pendingReview: pending,
+    totalDocuments: total,
+  };
+}
+
+async function loadPFilesKpisRangeUncached(
+  input: RangeInput,
+): Promise<RangeResult<PFilesRangeKpis>> {
+  const [current, comparison] = await Promise.all([
+    loadPFilesKpisForRange(input),
+    loadPFilesKpisForRange({
+      ayCode: input.ayCode,
+      from: input.cmpFrom,
+      to: input.cmpTo,
+      cmpFrom: input.cmpFrom,
+      cmpTo: input.cmpTo,
+    }),
+  ]);
+  return {
+    current,
+    comparison,
+    delta: computeDelta(current.revisionsInRange, comparison.revisionsInRange),
+    range: { from: input.from, to: input.to },
+    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+  };
+}
+
+export function getPFilesKpisRange(input: RangeInput): Promise<RangeResult<PFilesRangeKpis>> {
+  return unstable_cache(
+    loadPFilesKpisRangeUncached,
+    ['p-files', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
+  )(input);
+}
+
+// Revision velocity — daily-bucketed revision replacements.
+
+export type VelocityPoint = { x: string; y: number };
+
+function bucketByDay(rows: { ts: string }[], from: string, to: string): VelocityPoint[] {
+  const fromDate = parseLocalDate(from);
+  const toDate = parseLocalDate(to);
+  if (!fromDate || !toDate) return [];
+  const length = daysInRange({ from, to });
+  const buckets = new Array(length).fill(0) as number[];
+  const labels: string[] = [];
+  for (let i = 0; i < length; i += 1) {
+    const d = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate() + i);
+    labels.push(toISODate(d));
+  }
+  for (const row of rows) {
+    const date = row.ts.slice(0, 10);
+    const idx = labels.indexOf(date);
+    if (idx >= 0) buckets[idx] += 1;
+  }
+  return labels.map((x, i) => ({ x, y: buckets[i] }));
+}
+
+async function loadRevisionVelocityRangeUncached(
+  input: RangeInput,
+): Promise<RangeResult<VelocityPoint[]>> {
+  const service = createServiceClient();
+  const earliest = input.cmpFrom < input.from ? input.cmpFrom : input.from;
+  const latest = input.to > input.cmpTo ? input.to : input.cmpTo;
+
+  const { data } = await service
+    .from('p_file_revisions')
+    .select('replaced_at')
+    .eq('ay_code', input.ayCode)
+    .gte('replaced_at', `${earliest}T00:00:00+08:00`)
+    .lte('replaced_at', `${latest}T23:59:59+08:00`);
+
+  type Row = { replaced_at: string };
+  const rows = ((data ?? []) as Row[]).map((r) => ({ ts: r.replaced_at }));
+  const current = bucketByDay(rows, input.from, input.to);
+  const comparison = bucketByDay(rows, input.cmpFrom, input.cmpTo);
+  const currentTotal = current.reduce((s, p) => s + p.y, 0);
+  const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
+  return {
+    current,
+    comparison,
+    delta: computeDelta(currentTotal, comparisonTotal),
+    range: { from: input.from, to: input.to },
+    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+  };
+}
+
+export function getRevisionVelocityRange(
+  input: RangeInput,
+): Promise<RangeResult<VelocityPoint[]>> {
+  return unstable_cache(
+    loadRevisionVelocityRangeUncached,
+    ['p-files', 'revision-velocity', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
+  )(input);
+}
+
+// Slot status mix — donut-ready breakdown of valid / pending / rejected / missing.
+
+export type SlotStatusMix = {
+  valid: number;
+  pending: number;
+  rejected: number;
+  missing: number;
+};
+
+async function loadSlotStatusMixUncached(ayCode: string): Promise<SlotStatusMix> {
+  const prefix = prefixFor(ayCode);
+  const admissions = createAdmissionsClient();
+  const { data } = await admissions
+    .from(`${prefix}_enrolment_documents`)
+    .select(
+      [
+        'enroleeNumber',
+        ...DOCUMENT_SLOTS.flatMap((s) =>
+          s.expires ? [s.key, `${s.key}Status`, `${s.key}Expiry`] : [s.key, `${s.key}Status`],
+        ),
+      ].join(', '),
+    );
+  type Row = Record<string, string | null>;
+  const mix: SlotStatusMix = { valid: 0, pending: 0, rejected: 0, missing: 0 };
+  for (const row of ((data ?? []) as unknown as Row[])) {
+    for (const slot of DOCUMENT_SLOTS) {
+      const url = row[slot.key];
+      const rawStatus = row[`${slot.key}Status`];
+      const expiry = slot.expires ? row[`${slot.key}Expiry`] : null;
+      const status = resolveStatus(url, rawStatus, expiry, slot.expires);
+      switch (status) {
+        case 'valid': mix.valid += 1; break;
+        case 'uploaded': mix.pending += 1; break;
+        case 'rejected': mix.rejected += 1; break;
+        case 'expired':
+        case 'missing': mix.missing += 1; break;
+        case 'na': break;
+      }
+    }
+  }
+  return mix;
+}
+
+export function getSlotStatusMix(ayCode: string): Promise<SlotStatusMix> {
+  return unstable_cache(
+    loadSlotStatusMixUncached,
+    ['p-files', 'slot-status-mix', ayCode],
+    { tags: tag(ayCode), revalidate: CACHE_TTL_SECONDS },
+  )(ayCode);
+}

@@ -1,6 +1,14 @@
 import { unstable_cache } from 'next/cache';
 
 import { createServiceClient } from '@/lib/supabase/service';
+import {
+  computeDelta,
+  daysInRange,
+  parseLocalDate,
+  toISODate,
+  type RangeInput,
+  type RangeResult,
+} from '@/lib/dashboard/range';
 
 // Markbook dashboard aggregators — grading-specific lens.
 //
@@ -415,3 +423,217 @@ export function getRecentMarkbookActivity(
 ): Promise<RecentMarkbookActivityRow[]> {
   return loadRecentMarkbookActivity(limit);
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Range-aware siblings (new). Follow KD #46: hoist uncached loader, wrap
+// `unstable_cache` per-call. Existing functions above stay byte-compatible.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type MarkbookRangeKpis = {
+  gradesEntered: number;
+  sheetsLocked: number;
+  sheetsTotal: number;
+  lockedPct: number;
+  changeRequestsPending: number;
+  avgDecisionHours: number | null;
+};
+
+async function loadMarkbookKpisForRange(input: RangeInput): Promise<MarkbookRangeKpis> {
+  const service = createServiceClient();
+  const fromIso = `${input.from}T00:00:00+08:00`;
+  const toIso = `${input.to}T23:59:59+08:00`;
+
+  const [entriesRes, sheetsRes, changeReqRes] = await Promise.all([
+    service
+      .from('grade_entries')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', fromIso)
+      .lte('created_at', toIso),
+    service
+      .from('grading_sheets')
+      .select('is_locked, locked_at'),
+    service
+      .from('grade_change_requests')
+      .select('status, requested_at, reviewed_at')
+      .gte('requested_at', fromIso)
+      .lte('requested_at', toIso),
+  ]);
+
+  type SheetRow = { is_locked: boolean; locked_at: string | null };
+  const sheets = (sheetsRes.data ?? []) as SheetRow[];
+  const lockedInRange = sheets.filter(
+    (s) => s.is_locked && s.locked_at && s.locked_at >= fromIso && s.locked_at <= toIso,
+  ).length;
+
+  type CrRow = { status: string; requested_at: string; reviewed_at: string | null };
+  const crRows = (changeReqRes.data ?? []) as CrRow[];
+  const pending = crRows.filter((r) => r.status === 'pending').length;
+
+  let decidedCount = 0;
+  let totalMs = 0;
+  for (const r of crRows) {
+    if (!r.reviewed_at) continue;
+    if (r.status !== 'approved' && r.status !== 'rejected' && r.status !== 'applied') continue;
+    const req = Date.parse(r.requested_at);
+    const rev = Date.parse(r.reviewed_at);
+    if (Number.isNaN(req) || Number.isNaN(rev) || rev < req) continue;
+    totalMs += rev - req;
+    decidedCount += 1;
+  }
+  const avgDecisionHours = decidedCount > 0 ? Math.round((totalMs / decidedCount / 3_600_000) * 10) / 10 : null;
+
+  return {
+    gradesEntered: entriesRes.count ?? 0,
+    sheetsLocked: lockedInRange,
+    sheetsTotal: sheets.length,
+    lockedPct: sheets.length > 0 ? (lockedInRange / sheets.length) * 100 : 0,
+    changeRequestsPending: pending,
+    avgDecisionHours,
+  };
+}
+
+function emptyMarkbookKpis(): MarkbookRangeKpis {
+  return {
+    gradesEntered: 0,
+    sheetsLocked: 0,
+    sheetsTotal: 0,
+    lockedPct: 0,
+    changeRequestsPending: 0,
+    avgDecisionHours: null,
+  };
+}
+
+async function loadMarkbookKpisRangeUncached(
+  input: RangeInput,
+): Promise<RangeResult<MarkbookRangeKpis>> {
+  const [current, comparison] = await Promise.all([
+    loadMarkbookKpisForRange(input),
+    loadMarkbookKpisForRange({
+      ayCode: input.ayCode,
+      from: input.cmpFrom,
+      to: input.cmpTo,
+      cmpFrom: input.cmpFrom,
+      cmpTo: input.cmpTo,
+    }),
+  ]);
+  return {
+    current,
+    comparison,
+    delta: computeDelta(current.gradesEntered, comparison.gradesEntered),
+    range: { from: input.from, to: input.to },
+    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+  };
+}
+
+export function getMarkbookKpisRange(input: RangeInput): Promise<RangeResult<MarkbookRangeKpis>> {
+  return unstable_cache(
+    loadMarkbookKpisRangeUncached,
+    ['markbook', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    { tags: ['markbook', `markbook:${input.ayCode}`], revalidate: CACHE_TTL_SECONDS },
+  )(input);
+}
+
+// Grade-entry velocity — daily counts for both periods, aligned by index.
+
+export type VelocityPoint = { x: string; y: number };
+
+function bucketByDay(rows: { ts: string }[], from: string, to: string): VelocityPoint[] {
+  const fromDate = parseLocalDate(from);
+  const toDate = parseLocalDate(to);
+  if (!fromDate || !toDate) return [];
+  const length = daysInRange({ from, to });
+  const buckets = new Array(length).fill(0) as number[];
+  const labels: string[] = [];
+  for (let i = 0; i < length; i += 1) {
+    const d = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate() + i);
+    labels.push(toISODate(d));
+  }
+  for (const row of rows) {
+    const date = row.ts.slice(0, 10);
+    const idx = labels.indexOf(date);
+    if (idx >= 0) buckets[idx] += 1;
+  }
+  return labels.map((x, i) => ({ x, y: buckets[i] }));
+}
+
+async function loadGradeEntryVelocityRangeUncached(
+  input: RangeInput,
+): Promise<RangeResult<VelocityPoint[]>> {
+  const service = createServiceClient();
+  const earliest = input.cmpFrom < input.from ? input.cmpFrom : input.from;
+  const latest = input.to > input.cmpTo ? input.to : input.cmpTo;
+
+  const { data } = await service
+    .from('grade_entries')
+    .select('created_at')
+    .gte('created_at', `${earliest}T00:00:00+08:00`)
+    .lte('created_at', `${latest}T23:59:59+08:00`);
+
+  type Row = { created_at: string };
+  const rows = ((data ?? []) as Row[]).map((r) => ({ ts: r.created_at }));
+  const current = bucketByDay(rows, input.from, input.to);
+  const comparison = bucketByDay(rows, input.cmpFrom, input.cmpTo);
+
+  const currentTotal = current.reduce((s, p) => s + p.y, 0);
+  const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
+  return {
+    current,
+    comparison,
+    delta: computeDelta(currentTotal, comparisonTotal),
+    range: { from: input.from, to: input.to },
+    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+  };
+}
+
+export function getGradeEntryVelocityRange(
+  input: RangeInput,
+): Promise<RangeResult<VelocityPoint[]>> {
+  return unstable_cache(
+    loadGradeEntryVelocityRangeUncached,
+    ['markbook', 'grade-velocity-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    { tags: ['markbook', `markbook:${input.ayCode}`], revalidate: CACHE_TTL_SECONDS },
+  )(input);
+}
+
+// Change-request velocity — daily counts of newly-requested changes.
+
+async function loadChangeRequestVelocityRangeUncached(
+  input: RangeInput,
+): Promise<RangeResult<VelocityPoint[]>> {
+  const service = createServiceClient();
+  const earliest = input.cmpFrom < input.from ? input.cmpFrom : input.from;
+  const latest = input.to > input.cmpTo ? input.to : input.cmpTo;
+
+  const { data } = await service
+    .from('grade_change_requests')
+    .select('requested_at')
+    .gte('requested_at', `${earliest}T00:00:00+08:00`)
+    .lte('requested_at', `${latest}T23:59:59+08:00`);
+
+  type Row = { requested_at: string };
+  const rows = ((data ?? []) as Row[]).map((r) => ({ ts: r.requested_at }));
+  const current = bucketByDay(rows, input.from, input.to);
+  const comparison = bucketByDay(rows, input.cmpFrom, input.cmpTo);
+
+  const currentTotal = current.reduce((s, p) => s + p.y, 0);
+  const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
+  return {
+    current,
+    comparison,
+    delta: computeDelta(currentTotal, comparisonTotal),
+    range: { from: input.from, to: input.to },
+    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+  };
+}
+
+export function getChangeRequestVelocityRange(
+  input: RangeInput,
+): Promise<RangeResult<VelocityPoint[]>> {
+  return unstable_cache(
+    loadChangeRequestVelocityRangeUncached,
+    ['markbook', 'cr-velocity-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    { tags: ['markbook', `markbook:${input.ayCode}`], revalidate: CACHE_TTL_SECONDS },
+  )(input);
+}
+
+export { emptyMarkbookKpis };

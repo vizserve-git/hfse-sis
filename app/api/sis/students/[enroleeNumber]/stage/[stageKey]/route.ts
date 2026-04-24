@@ -4,12 +4,16 @@ import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { logAction } from '@/lib/audit/log-action';
 import {
+  ENROLLED_PREREQ_STAGES,
+  PREREQ_STAGE_PREDECESSOR,
   STAGE_COLUMN_MAP,
   STAGE_KEYS,
   STAGE_LABELS,
+  STAGE_TERMINAL_STATUS,
   StageUpdateSchema,
   type StageKey,
 } from '@/lib/schemas/sis';
+import { pickSectionForApplicant } from '@/lib/sis/class-assignment';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { syncOneStudent } from '@/lib/sync/students';
@@ -112,6 +116,135 @@ export async function PATCH(
     }
   }
 
+  // 2a) Predecessor gate — can't mark a prereq stage terminal (Finished /
+  // Signed / Paid) until the previous prereq is also terminal. In-progress
+  // values and Cancelled are always allowed; this only gates the terminal
+  // transition.
+  const predecessor = PREREQ_STAGE_PREDECESSOR[stageKey];
+  const expectedTerminalForThisStage = STAGE_TERMINAL_STATUS[stageKey];
+  if (
+    predecessor &&
+    expectedTerminalForThisStage &&
+    status === expectedTerminalForThisStage
+  ) {
+    const predCol = STAGE_COLUMN_MAP[predecessor].statusCol;
+    const { data: predRow, error: predErr } = await supabase
+      .from(statusTable)
+      .select(predCol)
+      .eq('enroleeNumber', enroleeNumber)
+      .maybeSingle();
+    if (predErr) {
+      console.error('[sis stage PATCH] predecessor fetch failed:', predErr.message);
+      return NextResponse.json({ error: 'Predecessor lookup failed' }, { status: 500 });
+    }
+    const predCurrent =
+      predRow && typeof predRow === 'object'
+        ? ((predRow as Record<string, string | null>)[predCol] ?? null)
+        : null;
+    const expectedPred = STAGE_TERMINAL_STATUS[predecessor]!;
+    if (predCurrent !== expectedPred) {
+      return NextResponse.json(
+        {
+          error: 'Previous stage not complete',
+          blockers: [
+            {
+              stage: STAGE_LABELS[predecessor],
+              current: predCurrent,
+              expected: expectedPred,
+            },
+          ],
+        },
+        { status: 422 },
+      );
+    }
+  }
+
+  // 2b) Enrolled-prereq gate + auto class assignment.
+  // Setting applicationStatus = 'Enrolled' requires all 5 prereq stages at
+  // their terminal values AND a section with capacity. 'Enrolled (Conditional)'
+  // deliberately bypasses this — it's the registrar override for edge cases
+  // (transfers mid-year, late-arriving documents, etc.). If the gate passes,
+  // we piggyback the class-assignment columns onto the same UPDATE so the
+  // flip is atomic at the row level.
+  let classAutoAssigned = false;
+  if (stageKey === 'application' && status === 'Enrolled') {
+    // Re-fetch the status row with every prereq column for the gate check.
+    const prereqSelect = ENROLLED_PREREQ_STAGES.map(
+      (k) => STAGE_COLUMN_MAP[k].statusCol,
+    ).join(', ');
+    const { data: prereqRow, error: prereqErr } = await supabase
+      .from(statusTable)
+      .select(prereqSelect)
+      .eq('enroleeNumber', enroleeNumber)
+      .maybeSingle();
+    if (prereqErr || !prereqRow) {
+      console.error('[sis stage PATCH] prereq fetch failed:', prereqErr?.message);
+      return NextResponse.json({ error: 'Prereq lookup failed' }, { status: 500 });
+    }
+    const prereqCurrent = prereqRow as unknown as Record<string, string | null>;
+    const blockers: Array<{ stage: string; current: string | null; expected: string }> = [];
+    for (const stage of ENROLLED_PREREQ_STAGES) {
+      const col = STAGE_COLUMN_MAP[stage].statusCol;
+      const expected = STAGE_TERMINAL_STATUS[stage]!;
+      const current = prereqCurrent[col] ?? null;
+      if (current !== expected) {
+        blockers.push({
+          stage: STAGE_LABELS[stage],
+          current: current,
+          expected,
+        });
+      }
+    }
+    if (blockers.length > 0) {
+      return NextResponse.json(
+        {
+          error: 'Prerequisite stages incomplete',
+          blockers,
+        },
+        { status: 422 },
+      );
+    }
+
+    // Gate passed — auto-assign a class. Need the application row's
+    // levelApplied / classType / preferredSchedule for the scoring.
+    const admissionsClient = createAdmissionsClient();
+    const appsTable = `${prefix}_enrolment_applications`;
+    const { data: appRow, error: appErr } = await admissionsClient
+      .from(appsTable)
+      .select('levelApplied, classType, preferredSchedule')
+      .eq('enroleeNumber', enroleeNumber)
+      .maybeSingle();
+    if (appErr || !appRow) {
+      console.error('[sis stage PATCH] application row fetch failed:', appErr?.message);
+      return NextResponse.json(
+        { error: 'Cannot enroll: application row missing' },
+        { status: 422 },
+      );
+    }
+    const appLite = appRow as unknown as {
+      levelApplied: string | null;
+      classType: string | null;
+      preferredSchedule: string | null;
+    };
+    const pick = await pickSectionForApplicant(supabase, ayCode, appLite);
+    if ('error' in pick) {
+      return NextResponse.json(
+        { error: `Cannot enroll: ${pick.error}` },
+        { status: 422 },
+      );
+    }
+    // Merge class-assignment columns into the same update so the Enrolled
+    // flip and the class write land atomically (single row UPDATE).
+    const classCols = STAGE_COLUMN_MAP.class;
+    const todayIso = new Date().toISOString();
+    update[classCols.statusCol] = 'Finished';
+    update['classLevel'] = pick.classLevel;
+    update['classSection'] = pick.classSection;
+    update[classCols.updatedDateCol] = todayIso;
+    update[classCols.updatedByCol] = auth.user.email ?? '(unknown)';
+    classAutoAssigned = true;
+  }
+
   const { error: upErr } = await supabase
     .from(statusTable)
     .update(update)
@@ -149,38 +282,73 @@ export async function PATCH(
   // 4) Invalidate the per-AY cache so detail + list re-render with new data.
   revalidateTag(`sis:${ayCode}`, 'max');
 
-  // 5) Auto-sync the grading roster when the class stage flips to Assigned.
-  // Materialises students + section_students rows immediately so the
-  // registrar doesn't need a separate trip to /markbook/sync-students.
-  // Best-effort — failures log but don't fail the request; bulk sync is
-  // still available as a fallback.
+  // 5) Auto-sync the grading roster when class placement is now complete.
+  // Fires in two paths:
+  //   (a) application → Enrolled — auto-assigned the class above.
+  //   (b) class stage manually set to Finished (registrar override or
+  //       reassignment) — need to confirm classLevel + classSection are
+  //       both populated before syncing.
+  // Post-update re-read ensures both class columns are non-null regardless
+  // of path. Best-effort — failures log but don't fail the PATCH; the
+  // bulk sync at /markbook/sync-students is still available as fallback.
   let autoSync: { change: string; reason?: string; error?: string } | null = null;
-  if (stageKey === 'class' && status === 'Assigned') {
-    const admissions = createAdmissionsClient();
-    const result = await syncOneStudent(supabase, admissions, enroleeNumber, ayCode);
-    autoSync = {
-      change: result.change,
-      ...(result.reason ? { reason: result.reason } : {}),
-      ...(result.error ? { error: result.error } : {}),
+  const shouldSync =
+    classAutoAssigned ||
+    (stageKey === 'class' && status === 'Finished');
+
+  if (shouldSync) {
+    const { data: classCheck } = await supabase
+      .from(statusTable)
+      .select('classLevel, classSection, classStatus')
+      .eq('enroleeNumber', enroleeNumber)
+      .maybeSingle();
+    const check = (classCheck ?? {}) as {
+      classLevel?: string | null;
+      classSection?: string | null;
+      classStatus?: string | null;
     };
-    if (result.ok && (result.change === 'enrolled' || result.change === 'inserted' || result.change === 'reactivated')) {
-      await logAction({
-        service: supabase,
-        actor: { id: auth.user.id, email: auth.user.email ?? null },
-        action: 'student.sync',
-        entityType: 'sync_batch',
-        entityId: enroleeNumber,
-        context: {
-          ay_code: ayCode,
-          trigger: 'stage.class.assigned',
-          enroleeNumber,
-          change: result.change,
-        },
-      });
-    } else if (!result.ok) {
-      console.warn('[stage PATCH] auto-sync skipped:', result.reason ?? result.error);
+    const hasClassPlacement =
+      !!check.classLevel && !!check.classSection && check.classStatus === 'Finished';
+
+    if (hasClassPlacement) {
+      const admissions = createAdmissionsClient();
+      const result = await syncOneStudent(supabase, admissions, enroleeNumber, ayCode);
+      autoSync = {
+        change: result.change,
+        ...(result.reason ? { reason: result.reason } : {}),
+        ...(result.error ? { error: result.error } : {}),
+      };
+      if (
+        result.ok &&
+        (result.change === 'enrolled' ||
+          result.change === 'inserted' ||
+          result.change === 'reactivated')
+      ) {
+        await logAction({
+          service: supabase,
+          actor: { id: auth.user.id, email: auth.user.email ?? null },
+          action: 'student.sync',
+          entityType: 'sync_batch',
+          entityId: enroleeNumber,
+          context: {
+            ay_code: ayCode,
+            trigger: classAutoAssigned
+              ? 'stage.application.enrolled'
+              : 'stage.class.finished',
+            enroleeNumber,
+            change: result.change,
+          },
+        });
+      } else if (!result.ok) {
+        console.warn('[stage PATCH] auto-sync skipped:', result.reason ?? result.error);
+      }
     }
   }
 
-  return NextResponse.json({ ok: true, changed: changes.length, autoSync });
+  return NextResponse.json({
+    ok: true,
+    changed: changes.length,
+    classAutoAssigned,
+    autoSync,
+  });
 }

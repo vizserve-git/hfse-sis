@@ -33,11 +33,22 @@ export type SidebarBadgeKey = "changeRequests";
 export type SidebarBadges = Partial<Record<SidebarBadgeKey, number>>;
 
 const PFILES_NAV: NavSection[] = [
+  { items: [{ href: "/p-files", label: "Dashboard" }] },
   {
+    // Quick filters land on the dashboard with a `?status=` preset so the
+    // P-Files officer can jump straight to the work queue. The completeness
+    // table reads the searchParam and applies it as its initial filter.
+    label: "Quick filters",
     items: [
-      { href: "/p-files", label: "Dashboard" },
-      { href: "/p-files/audit-log", label: "Audit Log" },
+      { href: "/p-files?status=missing", label: "Missing documents" },
+      { href: "/p-files?status=expired", label: "Expired documents" },
+      { href: "/p-files?status=uploaded", label: "Pending review" },
+      { href: "/p-files?status=complete", label: "Fully validated" },
     ],
+  },
+  {
+    label: "Admin",
+    items: [{ href: "/p-files/audit-log", label: "Audit Log" }],
   },
 ];
 
@@ -81,7 +92,12 @@ const RECORDS_NAV: NavSection[] = [
 // Route group: (attendance)/attendance/*. Form advisers + registrar+ mark
 // daily attendance; import is registrar+ only.
 const ATTENDANCE_NAV: NavSection[] = [
-  { items: [{ href: "/attendance", label: "Sections" }] },
+  {
+    items: [
+      { href: "/attendance", label: "Dashboard" },
+      { href: "/attendance/sections", label: "Sections" },
+    ],
+  },
   {
     label: "Setup",
     items: [
@@ -106,15 +122,32 @@ const ATTENDANCE_NAV: NavSection[] = [
 ];
 
 // Admissions module — pre-enrolment funnel surface. Admissions team owns
-// applications, inquiries, conversion analytics. Once a student's stage hits
+// applications and conversion analytics. Once a student's stage hits
 // `Enrolled`, the cross-year permanent record lives in `/records/*` instead.
 const ADMISSIONS_NAV: NavSection[] = [
   { items: [{ href: "/admissions", label: "Dashboard" }] },
   {
     label: "Pipeline",
+    items: [{ href: "/admissions/applications", label: "Applications" }],
+  },
+  {
+    label: "Quicklinks",
     items: [
-      { href: "/admissions/applications", label: "Applications" },
-      { href: "/admissions/inquiries", label: "Inquiries" },
+      {
+        href: "/records/students",
+        label: "Enrolled students",
+        requiresRoles: ["registrar", "school_admin", "admin", "superadmin"],
+      },
+      {
+        href: "/p-files",
+        label: "Document validation",
+        requiresRoles: ["p-file", "admin", "superadmin"],
+      },
+      {
+        href: "/sis/ay-setup",
+        label: "AY Setup",
+        requiresRoles: ["school_admin", "admin", "superadmin"],
+      },
     ],
   },
   {
@@ -129,10 +162,19 @@ const ADMISSIONS_NAV: NavSection[] = [
 // sees all sections. The writeup is the sole source of the FCA comment on
 // T1-T3 report cards — grades/attendance come from their own modules.
 const EVALUATION_NAV: NavSection[] = [
+  { items: [{ href: "/evaluation", label: "Dashboard" }] },
   {
+    label: "Write-ups",
+    items: [{ href: "/evaluation/sections", label: "All terms" }],
+  },
+  {
+    // Per-term quicklinks land on the sections picker with `?term=<number>`
+    // preselected. T4 has no FCA comment section (KD #49) so it's omitted.
+    label: "Quick filters",
     items: [
-      { href: "/evaluation", label: "Dashboard" },
-      { href: "/evaluation/sections", label: "Write-ups" },
+      { href: "/evaluation/sections?term=1", label: "Term 1 write-ups" },
+      { href: "/evaluation/sections?term=2", label: "Term 2 write-ups" },
+      { href: "/evaluation/sections?term=3", label: "Term 3 write-ups" },
     ],
   },
 ];

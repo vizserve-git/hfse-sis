@@ -2,7 +2,7 @@
 
 > **Note on naming + routing.** This module was originally called "SIS module" because it replaces Directus's Student Information System view. After the SIS-first framing (2026-04-20) the display name became **Records** to avoid collision with the product name. On the same date the Records module moved from `/sis/*` to `/records/*` to free up `/sis/*` as the SIS admin hub (AY Setup, Approvers, superadmin landing). Internal type value is now `"records"` in the `Module` union; `"sis"` identifies the admin hub. API paths (`/api/sis/*`), cache tags (`sis:${ay}`), audit prefix (`sis.*`), and this filename stay as-is for stability — renaming them would invalidate historical audit rows + cache entries.
 
-> **Status:** 🔶 Phases 1–2 shipped (2026-04-17). Phase 3 spec finalized 2026-04-18 — see `docs/sprints/development-plan.md` §Sprint 10 Phase 3. Phase 4 (inquiries) blocked on SharePoint creds. The sections below describe the module's intent and cross-module contract; for up-to-date shipped scope read the sprint plan.
+> **Status:** 🔶 Phases 1–2 shipped (2026-04-17). Phase 3 spec finalized 2026-04-18 — see `docs/sprints/development-plan.md` §Sprint 10 Phase 3. The sections below describe the module's intent and cross-module contract; for up-to-date shipped scope read the sprint plan.
 
 ## Why this doc exists
 
@@ -15,10 +15,9 @@ This context file captures the rough shape of the module, the decisions that hav
 A comprehensive records surface for admissions and registrar staff. Primary jobs-to-be-done:
 
 - **Find a student.** Search by name, student number, enrolee number, section, level.
-- **View the full record.** Demographics, family contacts, siblings, enrollment status, documents, discounts, medical/allergy flags, inquiry history.
+- **View the full record.** Demographics, family contacts, siblings, enrollment status, documents, discounts, medical/allergy flags.
 - **Edit the record.** Update demographics, parent emails, class assignment, withdrawal status, etc.
 - **Manage the discount code catalogue.** Create / edit / expire codes on `ay{YY}_discount_codes`. Per-student *grants* are handled by the enrolment portal, which writes the `discount1` / `discount2` / `discount3` slot columns on `ay{YY}_enrolment_applications` directly — SIS only edits those slot strings via the Phase 2 profile sheet; there is no separate grants ledger.
-- **Track inquiries.** SharePoint-sourced leads that precede application, plus conversion analytics (inquiry → applied → enrolled).
 - **Replace Directus** as the day-to-day admissions tool. No data migration — the tables are already in Supabase.
 
 ## Access
@@ -51,12 +50,6 @@ Separate route group `/(sis)/sis/*` with its own sidebar and layout, parallel to
 - Just shipped as Sprint 8 (2026-04-17) — breaking the module boundary immediately would reset user muscle memory.
 - Specialization is fine when the tasks are genuinely distinct. P-Files asks "does this student have a valid birth cert?"; SIS asks "what is this student's complete record?"
 
-### 3. Inquiries live inside SIS, not in `/admin/admissions`
-
-Earlier conversation considered putting SharePoint inquiries under `/admin/admissions/inquiries` as a sibling to the existing read-only pipeline dashboard. The existence of SIS changes that: inquiries belong in SIS so the full funnel (inquiry → application → enrolled → discount → document) is visible in one place.
-
-The existing `/admin/admissions` pipeline dashboard can stay where it is (it's the high-level analytics hero) or get merged into SIS as a tab later. Defer this call until SIS scope firms up.
-
 ## Cross-module data contract
 
 Three modules share the admissions tables. The rule: **each table has one primary writer.**
@@ -71,7 +64,6 @@ Three modules share the admissions tables. The rule: **each table has one primar
 | `p_file_revisions` | Read (historical context per student) | **Write** (appended on replace, Key Decision #36) | — |
 | `ay{YY}_discount_codes` | **Write** (exclusive — Phase 3 catalogue CRUD) | — | — |
 | `ay{YY}_enrolment_applications.discount{1,2,3}` | Write (via Phase 2 profile sheet) | — | Read |
-| Inquiries *(source TBD)* | **Write** (exclusive) | — | — |
 
 *Per-student discount grants are written by the external enrolment portal, not by SIS. SIS only manages the code catalogue and edits the 3 slot strings on the student's application row.*
 
@@ -87,7 +79,6 @@ These need answers before a sprint opens:
 
 - [ ] **Directus feature parity** — what exactly does the admissions team do in Directus today? List every workflow so the MVP scope is grounded, not invented. (Student edit? Discount grant? Bulk status update? Reports?)
 - [x] ~~**`enrolment_discounts` schema**~~ — **Resolved 2026-04-18:** no new table. Per-student grants are written by the enrolment portal into `ay{YY}_enrolment_applications.discount{1,2,3}` (text slots referencing catalogue `discountCode`). SIS manages the `ay{YY}_discount_codes` catalogue only. `enroleeType` is a 6-value eligibility enum: `New` / `Current` / `Both` / `VizSchool New` / `VizSchool Current` / `VizSchool Both`.
-- [ ] **Inquiries data source** — SharePoint list, API, CSV export, or something else? Credentials still blocked (same blocker as Sprint 7 Part B). Can a `enrolment_inquiries` table in Supabase serve as the SIS-native store, with SharePoint → Supabase as a one-way sync?
 - [ ] **Role model** — option (a) reuse existing roles, or option (b) add a new `sis` role? If (b), who assigns it and via what UI?
 - [ ] **Student lifecycle edits** — who can change `applicationStatus`? `classSection`? Should section reassignment trigger a grade-entry migration, or is that a manual process?
 - [ ] **Write safety** — some admissions columns (e.g. `studentNumber`, `enroleeNumber`) are stable IDs referenced by other tables. Should SIS allow edits, prevent them, or require an audit-logged override?
@@ -101,7 +92,7 @@ These need answers before a sprint opens:
 ## Out of scope (until explicitly pulled in)
 
 - Parent-facing SIS surface (parents see their own child's record) — separate feature, not in the first cut
-- SMS / email sequences / outreach automation — if inquiries grow into a CRM, that's a later phase
+- SMS / email sequences / outreach automation — later-phase CRM scope if that lane ever opens
 - Timetable / scheduling
 - Fee billing and payment processing (distinct from discounts — "discount" is a record on the student; "billing" is a transactional system)
 
@@ -115,7 +106,7 @@ Just to anchor the discussion — not a commitment:
 4. Detail page: `/records/students/[enroleeNumber]` with tabs — Profile / Family / Enrollment / Documents (with approve/reject in Phase 3; links to P-Files for the file viewer). No separate Discounts tab — the catalogue lives at `/sis/admin/discount-codes` (moved to SIS Admin 2026-04-22; Records sidebar keeps a cross-module link), grants live in the Profile sheet's Discount slots section.
 5. Write forms: RHF + zod + shadcn `Form` per existing convention (Key Decision #20). Schemas in `lib/schemas/`.
 6. Audit log: new actions (`sis.profile.update`, `sis.family.update`, `sis.stage.update`, `sis.discount_code.*`, `sis.document.{approve,reject}`), new entity types (`enrolment_application`, `enrolment_status`, `discount_code`, `enrolment_document`), written via existing `logAction()`. Route `/records/audit-log` with a module-scoped view (same split pattern as `/p-files/audit-log`).
-7. Migration SQL is only needed if Phase 4 inquiries land — no schema changes for Phases 1–3.
+7. No schema changes for Phases 1–3 — everything writes existing admissions tables.
 
 ## References
 

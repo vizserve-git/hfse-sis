@@ -24,18 +24,8 @@ import {
 
 export function AssessmentOutcomesChart({ data }: { data: AssessmentOutcomes }) {
   const rows = [
-    {
-      subject: 'Math',
-      Pass: data.mathPass,
-      Fail: data.mathFail,
-      Unknown: data.mathUnknown,
-    },
-    {
-      subject: 'English',
-      Pass: data.engPass,
-      Fail: data.engFail,
-      Unknown: data.engUnknown,
-    },
+    { subject: 'Math', Pass: data.mathPass, Fail: data.mathFail, Unknown: data.mathUnknown },
+    { subject: 'English', Pass: data.engPass, Fail: data.engFail, Unknown: data.engUnknown },
   ];
   const empty = rows.every((r) => r.Pass + r.Fail + r.Unknown === 0);
 
@@ -64,54 +54,27 @@ export function AssessmentOutcomesChart({ data }: { data: AssessmentOutcomes }) 
             </p>
           </div>
         ) : (
-          <div className="h-[220px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={rows}
-                margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
-              >
-                <CartesianGrid
-                  vertical={false}
-                  stroke="var(--border)"
-                  strokeDasharray="3 3"
-                />
-                <XAxis
-                  dataKey="subject"
-                  stroke="var(--muted-foreground)"
-                  fontSize={12}
-                  tickLine={false}
-                />
-                <YAxis
-                  stroke="var(--muted-foreground)"
-                  fontSize={12}
-                  allowDecimals={false}
-                  tickLine={false}
-                />
-                <Tooltip
-                  cursor={{ fill: 'var(--accent)' }}
-                  contentStyle={{
-                    background: 'var(--popover)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius)',
-                    color: 'var(--popover-foreground)',
-                    fontSize: 12,
-                  }}
-                />
-                <Legend
-                  wrapperStyle={{ fontSize: 12, paddingTop: 4 }}
-                  iconType="circle"
-                />
-                <Bar dataKey="Pass" stackId="a" fill="var(--chart-5)" />
-                <Bar dataKey="Fail" stackId="a" fill="var(--destructive)" />
-                <Bar
-                  dataKey="Unknown"
-                  stackId="a"
-                  fill="var(--muted-foreground)"
-                  radius={[4, 4, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={rows} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+              <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
+              <XAxis dataKey="subject" stroke="var(--muted-foreground)" fontSize={12} tickLine={false} />
+              <YAxis stroke="var(--muted-foreground)" fontSize={12} allowDecimals={false} tickLine={false} />
+              <Tooltip
+                cursor={{ fill: 'var(--accent)' }}
+                contentStyle={{
+                  background: 'var(--popover)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  color: 'var(--popover-foreground)',
+                  fontSize: 12,
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 4 }} iconType="circle" />
+              <Bar dataKey="Pass" stackId="a" fill="var(--chart-5)" />
+              <Bar dataKey="Fail" stackId="a" fill="var(--destructive)" />
+              <Bar dataKey="Unknown" stackId="a" fill="var(--muted-foreground)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         )}
       </CardContent>
     </Card>

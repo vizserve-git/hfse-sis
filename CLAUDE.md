@@ -17,8 +17,9 @@ Not `@`-imported. Each file carries YAML frontmatter (`description`, `load: on-d
 | --- | --- |
 | `.claude/rules/tech-stack.md` | Touching code, installing/upgrading a dep, debugging a framework behavior, or a Next.js 16 gotcha |
 | `.claude/rules/project-layout.md` | Creating new files, moving code between modules, or deciding where a new route or lib lives |
-| `.claude/rules/env-vars.md` | Touching `.env.local`, Supabase/auth plumbing, Resend emails, or M365 inquiry sync |
+| `.claude/rules/env-vars.md` | Touching `.env.local`, Supabase/auth plumbing, or Resend emails |
 | `.claude/rules/key-decisions.md` | A "KD #N" reference appears in code or docs; cross-cutting architectural choices; doubt about module boundaries, roles, or conventions |
+| `.claude/rules/design-system.md` | Before any UI / frontend code; when choosing a shadcn primitive, token, color, or layout |
 | `.claude/rules/workflow.md` | Finishing work — before reporting a task done, or at session wrap-up |
 
 ## Reference docs
@@ -33,7 +34,7 @@ Not `@`-imported. Each file carries YAML frontmatter (`description`, `load: on-d
 | `docs/context/05-report-card.md` | Report card UI / PDF |
 | `docs/context/06-admissions-integration.md` | Admissions sync |
 | `docs/context/07-api-routes.md` | API contracts |
-| `docs/context/08-admission-dashboard.md` | Admissions analytics + M365 inquiry sync |
+| `docs/context/08-admission-dashboard.md` | Admissions analytics |
 | `docs/context/09-design-system.md` | UI tokens, hard rules, page→component matrix, pre-delivery checklist |
 | `docs/context/09a-design-patterns.md` | Craft standard, canonical patterns, semantic color discipline |
 | `docs/context/10-parent-portal.md` | Parent identity, linkage, SSO handoff |
@@ -47,6 +48,7 @@ Not `@`-imported. Each file carries YAML frontmatter (`description`, `load: on-d
 | `docs/context/17-process-flow.md` | Cross-module lifecycle + soft gates |
 | `docs/context/18-ay-setup.md` | Superadmin AY-rollover wizard |
 | `docs/context/19-evaluation-module.md` | Student Evaluation module — FCA writeups + virtue theme (KD #49) |
+| `docs/context/20-dashboards.md` | Any dashboard work — before touching a module's landing page or `lib/<module>/dashboard.ts` |
 
 ## Session context
 

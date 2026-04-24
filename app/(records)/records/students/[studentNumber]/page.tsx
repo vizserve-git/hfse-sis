@@ -20,6 +20,7 @@ import {
   type AttendanceHistoryRow,
   type PlacementRow,
 } from '@/lib/sis/records-history';
+import { getEnrollmentHistory } from '@/lib/sis/queries';
 import { getSessionUser } from '@/lib/supabase/server';
 
 function displayName(s: {
@@ -55,7 +56,24 @@ export default async function RecordsStudentCrossYearPage({
   const { studentNumber } = await params;
 
   const student = await findStudentByNumber(studentNumber);
-  if (!student) notFound();
+  if (!student) {
+    // Legacy data path: the admissions tables may have a row with this
+    // studentNumber even though public.students doesn't (pre-SIS legacy
+    // data that was never synced into the grading schema). If we can find
+    // any admissions history for the studentNumber, redirect to the most
+    // recent AY's admissions detail instead of 404ing — the user still
+    // gets a useful surface, just without the cross-year grading overlay.
+    const history = await getEnrollmentHistory(studentNumber);
+    if (history.length > 0) {
+      // getEnrollmentHistory returns per-AY; pick the newest AY by ay_code
+      // (string sort works because ay_code is AY2026 / AY2025 / etc).
+      const newest = [...history].sort((a, b) => b.ayCode.localeCompare(a.ayCode))[0];
+      redirect(
+        `/admissions/applications/${encodeURIComponent(newest.enroleeNumber)}?ay=${encodeURIComponent(newest.ayCode)}`,
+      );
+    }
+    notFound();
+  }
 
   const [placements, academics, attendance] = await Promise.all([
     getPlacementHistory(student.studentId),

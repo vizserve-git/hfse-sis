@@ -123,103 +123,6 @@ Shows both count and percentage at each stage.
 
 ---
 
-## Section 2 — Inquiry Tracking
-
-### Purpose
-
-Track prospective student inquiries alongside the application pipeline. Provides visibility into whether the inquiry list is being maintained and how well inquiries convert to applications.
-
-### 2.1 M365 Connector Integration
-
-**Confirmed:** Inquiry data is stored in a **SharePoint List**. The dashboard reads from it via the Microsoft Graph API.
-
-**API endpoint:**
-
-```
-GET https://graph.microsoft.com/v1.0/sites/{site-id}/lists/{list-id}/items?expand=fields
-```
-
-**Required M365 app registration (Azure AD):**
-
-- Application (client credentials) flow — server-side only, no user login required
-- Permission: `Sites.Read.All` (application permission)
-- Tenant ID, Client ID, and Client Secret stored as environment variables
-
-**Environment variables to add:**
-
-```bash
-M365_TENANT_ID=
-M365_CLIENT_ID=
-M365_CLIENT_SECRET=
-SHAREPOINT_SITE_ID=        # from Graph API: /sites/{hostname}:/{site-path}
-SHAREPOINT_LIST_ID=        # from Graph API: /sites/{site-id}/lists
-```
-
-**Token acquisition (server-side, Next.js API route):**
-
-```typescript
-const tokenRes = await fetch(`https://login.microsoftonline.com/${process.env.M365_TENANT_ID}/oauth2/v2.0/token`, {
-  method: "POST",
-  body: new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: process.env.M365_CLIENT_ID!,
-    client_secret: process.env.M365_CLIENT_SECRET!,
-    scope: "https://graph.microsoft.com/.default",
-  }),
-});
-const { access_token } = await tokenRes.json();
-```
-
-**Fetching SharePoint list items:**
-
-```typescript
-const res = await fetch(
-  `https://graph.microsoft.com/v1.0/sites/${process.env.SHAREPOINT_SITE_ID}/lists/${process.env.SHAREPOINT_LIST_ID}/items?expand=fields&$top=999`,
-  { headers: { Authorization: `Bearer ${access_token}` } },
-);
-const { value: items } = await res.json();
-```
-
-**What to confirm with HFSE before building:**
-
-1. The SharePoint site URL and list name (to get the site ID and list ID via Graph Explorer)
-2. Whether an Azure AD app registration already exists, or if one needs to be created
-3. The exact column names in the SharePoint list (inquiry date, name, level, source, status, etc.)
-
-**Required M365 permissions:**
-
-- `Sites.Read.All` (application permission — does not require user login)
-
-### 2.2 Inquiry Dashboard View
-
-| Metric                       | Description                                             |
-| ---------------------------- | ------------------------------------------------------- |
-| Total inquiries (current AY) | Count of all logged inquiries                           |
-| Converted to application     | Count where an application exists for the same contact  |
-| Conversion rate              | % of inquiries that became applications                 |
-| Last updated                 | Timestamp of most recent inquiry record                 |
-| Stale flag                   | Alert if no new inquiry logged in X days (configurable) |
-
-### 2.3 Inquiry Staleness Alert
-
-If the inquiry list has not been updated within a configurable threshold (default: 3 days on school days), display a prominent warning:
-
-> ⚠️ Inquiry list has not been updated in 5 days. Last update: [date].
-
-This keeps the admissions team accountable for maintaining the inquiry log.
-
-### 2.4 Inquiry-to-Application Matching
-
-Match inquiries to applications by email or name to show conversion:
-
-```
-Inquiry received → Application submitted → Enrolled
-```
-
-Display unmatched inquiries separately — these are leads that never converted to an application.
-
----
-
 ## Suggested Additional Visualizations
 
 ### For Applications
@@ -232,14 +135,6 @@ Display unmatched inquiries separately — these are leads that never converted 
 | **Assessment outcomes**             | Pass/fail rate from `assessmentGradeMath` + `assessmentGradeEnglish`                |
 | **Nationality breakdown**           | Pie chart for diversity/visa planning                                               |
 | **Referral source**                 | Bar chart from `howDidYouKnowAboutHFSEIS` — which channels drive most applications? |
-
-### For Inquiries
-
-| Visualization                      | Value                                                         |
-| ---------------------------------- | ------------------------------------------------------------- |
-| **Inquiry source breakdown**       | Where are inquiries coming from (walk-in, website, referral)? |
-| **Inquiry-to-enrollment timeline** | Average days from first inquiry to enrolled status            |
-| **Weekly inquiry trend**           | Are inquiry volumes up or down vs same period last AY?        |
 
 ---
 
@@ -268,19 +163,6 @@ This module never writes to the admissions DB. All queries are `SELECT` only. Us
 
 Application counts and funnel metrics do not need to be real-time. Cache dashboard queries for 5–15 minutes to avoid hammering the admissions DB on every page load. Use Next.js `fetch` cache or a simple in-memory cache.
 
-### M365 Integration Dependency
-
-Inquiry data source is **confirmed: SharePoint List**.
-
-Still needed before building:
-
-1. SharePoint site URL and list name — to retrieve site ID and list ID via Graph Explorer
-2. Azure AD app registration — confirm if one exists or needs to be created
-3. Tenant ID, Client ID, Client Secret — from whoever manages HFSE's Azure AD tenant
-4. Exact column names in the SharePoint inquiry list
-
-The applications dashboard (Section 1) can be built independently — it has no M365 dependency.
-
 ---
 
 ## Sprint Placement
@@ -295,6 +177,3 @@ Sprint 7 tasks:
 - [ ] Average time to enrollment metric
 - [ ] Applications by level bar chart
 - [ ] Conversion funnel visualization
-- [ ] M365 connector research and setup (blocked on HFSE confirmation)
-- [ ] Inquiry dashboard view (after M365 setup)
-- [ ] Inquiry staleness alert

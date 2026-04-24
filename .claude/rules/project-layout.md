@@ -15,15 +15,16 @@ proxy.ts                         auth + role gate
 app/(auth)/login/
 app/(dashboard)/                 neutral shell: /, /account, redirect stubs
 app/(markbook)/markbook/         grading, report-cards, sections, change-requests, audit-log
-app/(attendance)/attendance/     daily-attendance writer (KD #47)
+app/(attendance)/attendance/     dashboard (analytics) + sections/ (picker, KD #55) + [sectionId] (daily writer, KD #47)
 app/(evaluation)/evaluation/     form-class-adviser writeups (KD #49)
-app/(admissions)/admissions/     pre-enrolment funnel + SharePoint inquiries (KD #51)
+app/(admissions)/admissions/     pre-enrolment funnel (KD #51)
 app/(parent)/parent/             SSO landing + report card view
 app/(p-files)/p-files/           documents repository
 app/(records)/records/           enrolled students (cross-year via studentNumber) + dashboard + audit
 app/(sis)/sis/                   admin hub: ay-setup, calendar, sections, sync-students, admin/{approvers,discount-codes,evaluation-checklists,school-config,settings,subjects,users}
 app/api/                         one folder per resource
-lib/                             auth, compute, audit, schemas, <module>/{queries,mutations,dashboard}.ts; lib/sis/{environment,seeder}/* for the test-AY flow (KD #52)
-components/                      ui (shadcn) + per-module folders + <module>-sidebar.tsx + module-switcher.tsx
+lib/                             auth, compute, audit, schemas, <module>/{queries,mutations,dashboard}.ts; lib/sis/{environment,seeder}/* for the test-AY flow (KD #52); lib/dashboard/* shared dashboard primitives — range.ts (preset resolution + delta math), windows.ts (term/AY windows, uses service client per KD #54), insights.ts (per-module narrative engines)
+components/                      ui (shadcn) + per-module folders + <module>-sidebar.tsx + module-switcher.tsx; components/dashboard/* shared dashboard UI — DashboardHero, ComparisonToolbar, MetricCard, InsightsPanel, ActionList, charts/{trend,comparison-bar,donut,stacked-area,sparkline,heatmap}-chart.tsx
 supabase/migrations/             001 → 026_ay_slug_4digit
+docs/superpowers/                specs/ + plans/ — brainstorming spec docs and implementation plans produced by superpowers skills (not binding; living design artefacts)
 ```

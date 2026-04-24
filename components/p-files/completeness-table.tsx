@@ -34,7 +34,7 @@ import {
 import type { StudentCompleteness } from '@/lib/p-files/queries';
 import type { DocumentStatus } from '@/lib/p-files/document-config';
 
-type StatusFilter = 'all' | 'complete' | 'missing' | 'expired' | 'uploaded';
+export type StatusFilter = 'all' | 'complete' | 'missing' | 'expired' | 'uploaded';
 
 function StatusDot({ status }: { status: DocumentStatus }) {
   switch (status) {
@@ -55,11 +55,32 @@ function completenessPercent(s: StudentCompleteness): number {
   return s.total > 0 ? Math.round((s.complete / s.total) * 100) : 0;
 }
 
-export function CompletenessTable({ students }: { students: StudentCompleteness[] }) {
+export function CompletenessTable({
+  students,
+  ayCode,
+  initialStatusFilter,
+}: {
+  students: StudentCompleteness[];
+  /**
+   * Current-scope AY. Threaded through to `/p-files/[enroleeNumber]` as
+   * `?ay=...` so historical-AY browsing on the dashboard resolves against
+   * the right admissions table on the detail page.
+   */
+  ayCode?: string;
+  /**
+   * Preset status filter from a sidebar Quicklink (`?status=missing` /
+   * `expired` / `uploaded` / `complete`). The user can still change it
+   * via the toolbar `Select`; we just seed the initial state.
+   */
+  initialStatusFilter?: StatusFilter;
+}) {
+  const querySuffix = ayCode ? `?ay=${encodeURIComponent(ayCode)}` : '';
   const [search, setSearch] = React.useState('');
   const [levelFilter, setLevelFilter] = React.useState('all');
   const [sectionFilter, setSectionFilter] = React.useState('all');
-  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>(
+    initialStatusFilter ?? 'all',
+  );
   const [pageIndex, setPageIndex] = React.useState(0);
   const [pageSize, setPageSize] = React.useState(25);
 
@@ -289,7 +310,7 @@ export function CompletenessTable({ students }: { students: StudentCompleteness[
                       </TableCell>
                       <TableCell className="px-2 text-right">
                         <Link
-                          href={`/p-files/${s.enroleeNumber}`}
+                          href={`/p-files/${s.enroleeNumber}${querySuffix}`}
                           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                         >
                           View

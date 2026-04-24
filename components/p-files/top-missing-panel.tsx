@@ -19,8 +19,6 @@ export function TopMissingPanel({
   data: DocumentBacklogRow[];
   limit?: number;
 }) {
-  // Rank by missing + rejected desc. Pending is a softer problem; show
-  // separately per row but don't let it dominate the sort.
   const ranked = [...data]
     .map((r) => ({ ...r, gap: r.missing + r.rejected }))
     .filter((r) => r.gap > 0)

@@ -36,7 +36,7 @@ type LevelLite = {
 export default async function EvaluationSectionsPickerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ term_id?: string }>;
+  searchParams: Promise<{ term_id?: string; term?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -83,8 +83,16 @@ export default async function EvaluationSectionsPickerPage({
   // T4 is excluded — the T4 final card has no comment section (KD #49).
   const terms = ((termsRaw ?? []) as TermRow[]).filter((t) => t.term_number !== 4);
 
+  // `?term=<1|2|3>` is the sidebar-Quicklink contract — resolve the semantic
+  // number into the AY's term_id. `?term_id=<uuid>` is the canonical form (used
+  // by the Tabs switcher below); it wins when both are present.
+  const termNumberParam = sp.term ? Number.parseInt(sp.term, 10) : NaN;
+  const termIdFromNumber = Number.isFinite(termNumberParam)
+    ? terms.find((t) => t.term_number === termNumberParam)?.id
+    : undefined;
+
   const defaultTermId =
-    sp.term_id ?? terms.find((t) => t.is_current)?.id ?? terms[0]?.id ?? '';
+    sp.term_id ?? termIdFromNumber ?? terms.find((t) => t.is_current)?.id ?? terms[0]?.id ?? '';
   const selectedTerm = terms.find((t) => t.id === defaultTermId) ?? null;
 
   // Sections: teachers see only their form_adviser assignments; registrar+

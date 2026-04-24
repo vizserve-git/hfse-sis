@@ -38,10 +38,6 @@ Per-student, per-day presence / absence / tardy / excused. The Markbook module t
 
 Class period definitions, subject-per-period assignments, room allocations, substitute teacher coverage. Today the SIS only has `teacher_assignments` (subject × section × role gate) — which answers "who teaches what" but not "when and where." A full Scheduling module is the prerequisite for period-level attendance, conflict detection, and substitute workflows. Likely grows in phases: periods per level → teacher schedule view → room allocations → substitutions.
 
-### Inquiries — pre-application lead tracking
-
-Already spec'd in Sprint 10 Phase 4 (`13-sis-module.md` §"Phase 4"). Blocked on HFSE providing SharePoint site ID + Azure AD credentials. When unblocked: new `enrolment_inquiries` table + SharePoint → Supabase one-way sync + inquiry → application conversion funnel, surfaced inside the Records module.
-
 ### Process-flow enhancements (not a module — cross-cutting design)
 
 Lifecycle visibility (new 5th tab on Records student detail + dashboard aggregate widget on `/sis`), soft gates on the Stage edit dialog (advisory checklist of prerequisites), and opt-in auto-completions on objectively-derivable stages (documents all-Valid → auto-finish `documents` stage, payment date populated → auto-finish `fees` stage). **Zero schema changes for v1.** Full design sketch: `17-process-flow.md`.
@@ -88,7 +84,6 @@ Every admissions-owned table has one **primary writer**. Other modules may have 
 | `p_file_revisions` | Read (historical context) | **Write** (append on replace, KD #36) | — | — |
 | `ay{YY}_discount_codes` (catalogue) | **Write** (exclusive, catalogue CRUD + soft-delete) | — | — | — |
 | `ay{YY}_enrolment_applications.discount{1,2,3}` | Write (via Profile sheet) | — | Read | — |
-| Inquiries (source TBD, SharePoint-blocked) | **Write** (exclusive, Phase 4) | — | — | — |
 
 **Per-student discount grants** are written by the external enrolment portal directly into the `discount{1,2,3}` slot columns — the Records module only manages the code catalogue and edits the slot strings on the student's application row. There is no separate per-student grant ledger.
 

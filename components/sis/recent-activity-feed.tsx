@@ -55,13 +55,8 @@ export function RecentActivityFeed({ rows }: { rows: RecentActivityRow[] }) {
             {rows.map((r) => {
               const { Icon, label, tint } = describeAction(r.action);
               return (
-                <li
-                  key={r.id}
-                  className="flex items-start gap-3 px-5 py-3"
-                >
-                  <div
-                    className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${tint}`}
-                  >
+                <li key={r.id} className="flex items-start gap-3 px-5 py-3">
+                  <div className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${tint}`}>
                     <Icon className="size-3.5" />
                   </div>
                   <div className="min-w-0 flex-1 space-y-0.5">
@@ -102,46 +97,14 @@ export function RecentActivityFeed({ rows }: { rows: RecentActivityRow[] }) {
 }
 
 const ACTION_MAP: Record<string, { label: string; Icon: LucideIcon; tint: string }> = {
-  'sis.profile.update': {
-    label: 'Profile updated',
-    Icon: UserCircle2,
-    tint: 'bg-accent text-brand-indigo-deep',
-  },
-  'sis.family.update': {
-    label: 'Family updated',
-    Icon: Users,
-    tint: 'bg-accent text-brand-indigo-deep',
-  },
-  'sis.stage.update': {
-    label: 'Stage advanced',
-    Icon: Workflow,
-    tint: 'bg-accent text-brand-indigo-deep',
-  },
-  'sis.document.approve': {
-    label: 'Document approved',
-    Icon: FileCheck2,
-    tint: 'bg-brand-mint/30 text-ink',
-  },
-  'sis.document.reject': {
-    label: 'Document rejected',
-    Icon: FileX,
-    tint: 'bg-destructive/10 text-destructive',
-  },
-  'sis.discount_code.create': {
-    label: 'Discount code created',
-    Icon: Tag,
-    tint: 'bg-accent text-brand-indigo-deep',
-  },
-  'sis.discount_code.update': {
-    label: 'Discount code updated',
-    Icon: Tag,
-    tint: 'bg-accent text-brand-indigo-deep',
-  },
-  'sis.discount_code.expire': {
-    label: 'Discount code expired',
-    Icon: Tag,
-    tint: 'bg-muted text-muted-foreground',
-  },
+  'sis.profile.update': { label: 'Profile updated', Icon: UserCircle2, tint: 'bg-accent text-brand-indigo-deep' },
+  'sis.family.update': { label: 'Family updated', Icon: Users, tint: 'bg-accent text-brand-indigo-deep' },
+  'sis.stage.update': { label: 'Stage advanced', Icon: Workflow, tint: 'bg-accent text-brand-indigo-deep' },
+  'sis.document.approve': { label: 'Document approved', Icon: FileCheck2, tint: 'bg-brand-mint/30 text-ink' },
+  'sis.document.reject': { label: 'Document rejected', Icon: FileX, tint: 'bg-destructive/10 text-destructive' },
+  'sis.discount_code.create': { label: 'Discount code created', Icon: Tag, tint: 'bg-accent text-brand-indigo-deep' },
+  'sis.discount_code.update': { label: 'Discount code updated', Icon: Tag, tint: 'bg-accent text-brand-indigo-deep' },
+  'sis.discount_code.expire': { label: 'Discount code expired', Icon: Tag, tint: 'bg-muted text-muted-foreground' },
 };
 
 function describeAction(action: string) {

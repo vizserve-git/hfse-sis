@@ -74,7 +74,8 @@
       "Bash(git check-ignore *)",
       "Bash(echo \"---exit=$?\")",
       "Bash(rm -rf .next/* .next/.cache)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(echo \"exit=$?\")"
     ],
     "deny": [
       "Read(./.env.local)"
@@ -84,6 +85,7 @@
     "shadcn"
   ],
   "enabledPlugins": {
-    "ui-ux-pro-max@ui-ux-pro-max-skill": true
+    "ui-ux-pro-max@ui-ux-pro-max-skill": true,
+    "superpowers@claude-plugins-official": true
   }
 }

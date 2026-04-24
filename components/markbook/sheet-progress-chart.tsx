@@ -51,42 +51,26 @@ export function SheetProgressChart({ data }: { data: TermLockProgress[] }) {
             </p>
           </div>
         ) : (
-          <div className="h-[340px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 16, right: 16, bottom: 8, left: 0 }}>
-                <CartesianGrid
-                  vertical={false}
-                  stroke="var(--border)"
-                  strokeDasharray="3 3"
-                />
-                <XAxis
-                  dataKey="termLabel"
-                  stroke="var(--muted-foreground)"
-                  fontSize={12}
-                  tickLine={false}
-                />
-                <YAxis
-                  stroke="var(--muted-foreground)"
-                  fontSize={12}
-                  allowDecimals={false}
-                  tickLine={false}
-                />
-                <Tooltip
-                  cursor={{ fill: 'var(--accent)' }}
-                  contentStyle={{
-                    background: 'var(--popover)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius)',
-                    color: 'var(--popover-foreground)',
-                    fontSize: 12,
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" />
-                <Bar dataKey="locked" name="Locked" stackId="status" fill="var(--chart-5)" />
-                <Bar dataKey="open" name="Open" stackId="status" fill="var(--chart-3)" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <ResponsiveContainer width="100%" height={340}>
+            <BarChart data={data} margin={{ top: 16, right: 16, bottom: 8, left: 0 }}>
+              <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
+              <XAxis dataKey="termLabel" stroke="var(--muted-foreground)" fontSize={12} tickLine={false} />
+              <YAxis stroke="var(--muted-foreground)" fontSize={12} allowDecimals={false} tickLine={false} />
+              <Tooltip
+                cursor={{ fill: 'var(--accent)' }}
+                contentStyle={{
+                  background: 'var(--popover)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  color: 'var(--popover-foreground)',
+                  fontSize: 12,
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" />
+              <Bar dataKey="locked" name="Locked" stackId="status" fill="var(--chart-5)" />
+              <Bar dataKey="open" name="Open" stackId="status" fill="var(--chart-3)" />
+            </BarChart>
+          </ResponsiveContainer>
         )}
       </CardContent>
     </Card>

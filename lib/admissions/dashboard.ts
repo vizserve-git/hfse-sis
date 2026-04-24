@@ -1,6 +1,14 @@
 import { unstable_cache } from 'next/cache';
 
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
+import {
+  computeDelta,
+  daysInRange,
+  parseLocalDate,
+  toISODate,
+  type RangeInput,
+  type RangeResult,
+} from '@/lib/dashboard/range';
 
 // Sprint 7 Part A — read-only admissions analytics.
 //
@@ -464,6 +472,187 @@ export function getDocumentCompletion(ayCode: string): Promise<DocumentCompletio
   return unstable_cache(
     () => getDocumentCompletionUncached(ayCode),
     ['admissions-doc-completion', ayCode],
+    { revalidate: CACHE_TTL_SECONDS, tags: tag(ayCode) },
+  )();
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Range-aware siblings (new). Delegate to the existing `loadJoinedRows`
+// cache (AY-scoped) and range-filter in memory — avoids stampede on per-
+// (from,to) cache keys.
+// ──────────────────────────────────────────────────────────────────────────
+
+export type AdmissionsRangeKpis = {
+  applicationsInRange: number;
+  enrolledInRange: number;
+  conversionPct: number;
+  avgDaysToEnroll: number;
+  sampleSize: number;
+};
+
+function inRange(iso: string | null, from: string, to: string): boolean {
+  if (!iso) return false;
+  const d = iso.slice(0, 10);
+  return d >= from && d <= to;
+}
+
+function computeRangeKpis(rows: JoinedRow[], from: string, to: string): AdmissionsRangeKpis {
+  let applications = 0;
+  let enrolled = 0;
+  let totalDays = 0;
+  let samples = 0;
+
+  for (const r of rows) {
+    if (inRange(r.created_at, from, to)) applications += 1;
+    const isEnrolled =
+      r.applicationStatus === 'Enrolled' || r.applicationStatus === 'Enrolled (Conditional)';
+    if (isEnrolled && inRange(r.applicationUpdatedDate, from, to)) {
+      enrolled += 1;
+      if (r.created_at && r.applicationUpdatedDate) {
+        const start = Date.parse(r.created_at);
+        const end = Date.parse(r.applicationUpdatedDate);
+        if (!Number.isNaN(start) && !Number.isNaN(end) && end >= start) {
+          totalDays += Math.round((end - start) / 86_400_000);
+          samples += 1;
+        }
+      }
+    }
+  }
+
+  return {
+    applicationsInRange: applications,
+    enrolledInRange: enrolled,
+    conversionPct: applications > 0 ? (enrolled / applications) * 100 : 0,
+    avgDaysToEnroll: samples > 0 ? Math.round(totalDays / samples) : 0,
+    sampleSize: samples,
+  };
+}
+
+async function loadAdmissionsKpisRangeUncached(
+  input: RangeInput,
+): Promise<RangeResult<AdmissionsRangeKpis>> {
+  const rows = await loadJoinedRows(input.ayCode);
+  const current = computeRangeKpis(rows, input.from, input.to);
+  const comparison = computeRangeKpis(rows, input.cmpFrom, input.cmpTo);
+  return {
+    current,
+    comparison,
+    delta: computeDelta(current.applicationsInRange, comparison.applicationsInRange),
+    range: { from: input.from, to: input.to },
+    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+  };
+}
+
+export function getAdmissionsKpisRange(
+  input: RangeInput,
+): Promise<RangeResult<AdmissionsRangeKpis>> {
+  return unstable_cache(
+    loadAdmissionsKpisRangeUncached,
+    ['admissions', 'kpis-range', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
+  )(input);
+}
+
+// Applications-per-day velocity.
+
+export type VelocityPoint = { x: string; y: number };
+
+function bucketByDay(dates: (string | null)[], from: string, to: string): VelocityPoint[] {
+  const fromDate = parseLocalDate(from);
+  const toDate = parseLocalDate(to);
+  if (!fromDate || !toDate) return [];
+  const length = daysInRange({ from, to });
+  const labels: string[] = [];
+  for (let i = 0; i < length; i += 1) {
+    const d = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate() + i);
+    labels.push(toISODate(d));
+  }
+  const buckets = new Array(length).fill(0) as number[];
+  for (const iso of dates) {
+    if (!iso) continue;
+    const day = iso.slice(0, 10);
+    const idx = labels.indexOf(day);
+    if (idx >= 0) buckets[idx] += 1;
+  }
+  return labels.map((x, i) => ({ x, y: buckets[i] }));
+}
+
+async function loadApplicationsVelocityRangeUncached(
+  input: RangeInput,
+): Promise<RangeResult<VelocityPoint[]>> {
+  const rows = await loadJoinedRows(input.ayCode);
+  const createdDates = rows.map((r) => r.created_at);
+  const current = bucketByDay(createdDates, input.from, input.to);
+  const comparison = bucketByDay(createdDates, input.cmpFrom, input.cmpTo);
+  const currentTotal = current.reduce((s, p) => s + p.y, 0);
+  const comparisonTotal = comparison.reduce((s, p) => s + p.y, 0);
+  return {
+    current,
+    comparison,
+    delta: computeDelta(currentTotal, comparisonTotal),
+    range: { from: input.from, to: input.to },
+    comparisonRange: { from: input.cmpFrom, to: input.cmpTo },
+  };
+}
+
+export function getApplicationsVelocityRange(
+  input: RangeInput,
+): Promise<RangeResult<VelocityPoint[]>> {
+  return unstable_cache(
+    loadApplicationsVelocityRangeUncached,
+    ['admissions', 'apps-velocity', input.ayCode, input.from, input.to, input.cmpFrom, input.cmpTo],
+    { tags: tag(input.ayCode), revalidate: CACHE_TTL_SECONDS },
+  )(input);
+}
+
+// Time-to-enroll histogram — 7 day-buckets.
+
+export type TimeToEnrollBucket = {
+  label: string;
+  loDays: number;
+  hiDays: number | null;
+  count: number;
+};
+
+const HISTOGRAM_BUCKETS = [
+  { label: '0–7d', lo: 0, hi: 7 },
+  { label: '8–14d', lo: 8, hi: 14 },
+  { label: '15–30d', lo: 15, hi: 30 },
+  { label: '31–60d', lo: 31, hi: 60 },
+  { label: '61–90d', lo: 61, hi: 90 },
+  { label: '91–180d', lo: 91, hi: 180 },
+  { label: '>180d', lo: 181, hi: null as number | null },
+] as const;
+
+async function loadTimeToEnrollHistogramUncached(ayCode: string): Promise<TimeToEnrollBucket[]> {
+  const rows = await loadJoinedRows(ayCode);
+  const buckets: TimeToEnrollBucket[] = HISTOGRAM_BUCKETS.map((b) => ({
+    label: b.label,
+    loDays: b.lo,
+    hiDays: b.hi,
+    count: 0,
+  }));
+  for (const r of rows) {
+    const isEnrolled =
+      r.applicationStatus === 'Enrolled' || r.applicationStatus === 'Enrolled (Conditional)';
+    if (!isEnrolled) continue;
+    if (!r.created_at || !r.applicationUpdatedDate) continue;
+    const start = Date.parse(r.created_at);
+    const end = Date.parse(r.applicationUpdatedDate);
+    if (Number.isNaN(start) || Number.isNaN(end) || end < start) continue;
+    const days = Math.round((end - start) / 86_400_000);
+    const idx = buckets.findIndex(
+      (b) => days >= b.loDays && (b.hiDays === null || days <= b.hiDays),
+    );
+    if (idx >= 0) buckets[idx].count += 1;
+  }
+  return buckets;
+}
+
+export function getTimeToEnrollHistogram(ayCode: string): Promise<TimeToEnrollBucket[]> {
+  return unstable_cache(
+    () => loadTimeToEnrollHistogramUncached(ayCode),
+    ['admissions', 'time-to-enroll-histogram', ayCode],
     { revalidate: CACHE_TTL_SECONDS, tags: tag(ayCode) },
   )();
 }

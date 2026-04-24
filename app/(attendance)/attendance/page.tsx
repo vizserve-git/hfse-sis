@@ -1,279 +1,249 @@
-import Link from 'next/link';
+import { ArrowRight, CalendarCheck, Clock, UserCheck, UserX } from "lucide-react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+
+import { DonutChart } from "@/components/dashboard/charts/donut-chart";
+import { TrendChart } from "@/components/dashboard/charts/trend-chart";
+import { ComparisonToolbar } from "@/components/dashboard/comparison-toolbar";
+import { DashboardHero } from "@/components/dashboard/dashboard-hero";
+import { InsightsPanel } from "@/components/dashboard/insights-panel";
+import { MetricCard } from "@/components/dashboard/metric-card";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageShell } from "@/components/ui/page-shell";
 import {
-  CalendarCheck,
-  ChevronRight,
-  GraduationCap,
-  School,
-  Users,
-} from 'lucide-react';
+  getAttendanceKpisRange,
+  getDailyAttendanceRange,
+  getDayTypeDistributionRange,
+  getExReasonMixRange,
+  getTopAbsentRange,
+} from "@/lib/attendance/dashboard";
+import { attendanceInsights } from "@/lib/dashboard/insights";
+import { formatRangeLabel, resolveRange, type DashboardSearchParams } from "@/lib/dashboard/range";
+import { getDashboardWindows } from "@/lib/dashboard/windows";
+import { createClient, getSessionUser } from "@/lib/supabase/server";
 
-import { createClient, getSessionUser } from '@/lib/supabase/server';
-import { createServiceClient } from '@/lib/supabase/service';
-import { Badge } from '@/components/ui/badge';
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { PageShell } from '@/components/ui/page-shell';
-
-type LevelLite = { id: string; code: string; label: string; level_type: 'primary' | 'secondary' };
-type SectionCard = {
-  id: string;
-  name: string;
-  level_label: string;
-  level_code: string;
-  active: number;
-};
-
-export default async function AttendanceSectionsListPage() {
+export default async function AttendanceDashboard({ searchParams }: { searchParams: Promise<DashboardSearchParams> }) {
   const session = await getSessionUser();
-  const role = session?.role ?? null;
-  const isTeacherOnly = role === 'teacher';
+  if (!session) redirect("/login");
+
+  // Teachers should still land on the section picker — the dashboard is
+  // registrar+.
+  if (session.role === "teacher") redirect("/attendance/sections");
 
   const supabase = await createClient();
-
   const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id, ay_code, label')
-    .eq('is_current', true)
+    .from("academic_years")
+    .select("id, ay_code, label")
+    .eq("is_current", true)
     .single();
-
-  const { data: currentTerm } = await supabase
-    .from('terms')
-    .select('id, label')
-    .eq('is_current', true)
-    .maybeSingle();
-
-  // For teachers, narrow to sections they form-advise. For registrar+, show all.
-  let allowedSectionIds: Set<string> | null = null;
-  if (isTeacherOnly && session?.id && ay) {
-    const service = createServiceClient();
-    const { data: assignments } = await service
-      .from('teacher_assignments')
-      .select('section_id, sections!inner(academic_year_id)')
-      .eq('teacher_user_id', session.id)
-      .eq('role', 'form_adviser')
-      .eq('sections.academic_year_id', ay.id);
-    allowedSectionIds = new Set(
-      ((assignments ?? []) as Array<{ section_id: string }>).map((a) => a.section_id),
+  if (!ay) {
+    return (
+      <PageShell>
+        <div className="text-sm text-destructive">No current academic year configured.</div>
+      </PageShell>
     );
   }
 
-  const { data: sections } = ay
-    ? await supabase
-        .from('sections')
-        .select('id, name, level:levels(id, code, label, level_type)')
-        .eq('academic_year_id', ay.id)
-    : { data: [] as Array<{ id: string; name: string; level: LevelLite | LevelLite[] | null }> };
+  const resolvedSearch = await searchParams;
+  const selectedAy = typeof resolvedSearch.ay === "string" ? resolvedSearch.ay : ay.ay_code;
+  const windows = await getDashboardWindows(selectedAy);
+  const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
+  const ayCodes = [ay.ay_code];
 
-  const ids = (sections ?? []).map((s) => s.id);
-  const counts: Record<string, number> = {};
-  if (ids.length > 0) {
-    const { data: enrolments } = await supabase
-      .from('section_students')
-      .select('section_id, enrollment_status')
-      .in('section_id', ids);
-    for (const row of enrolments ?? []) {
-      if (row.enrollment_status !== 'withdrawn') {
-        counts[row.section_id] = (counts[row.section_id] ?? 0) + 1;
-      }
-    }
-  }
+  const [kpisResult, dailySeries, exMix, topAbsent, dayTypes] = await Promise.all([
+    getAttendanceKpisRange(rangeInput),
+    getDailyAttendanceRange(rangeInput),
+    getExReasonMixRange(rangeInput),
+    getTopAbsentRange(rangeInput, 10),
+    getDayTypeDistributionRange(rangeInput),
+  ]);
 
-  const getLevel = (l: LevelLite | LevelLite[] | null): LevelLite | null =>
-    Array.isArray(l) ? l[0] ?? null : l;
+  const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
 
-  const cards: SectionCard[] = (sections ?? [])
-    .filter((s) => !allowedSectionIds || allowedSectionIds.has(s.id))
-    .map((s) => {
-      const lvl = getLevel(s.level as LevelLite | LevelLite[] | null);
-      return {
-        id: s.id,
-        name: s.name,
-        level_label: lvl?.label ?? 'Unknown',
-        level_code: lvl?.code ?? '',
-        active: counts[s.id] ?? 0,
-      };
-    });
-
-  const grouped = new Map<string, SectionCard[]>();
-  for (const c of cards) {
-    if (!grouped.has(c.level_label)) grouped.set(c.level_label, []);
-    grouped.get(c.level_label)!.push(c);
-  }
-  const sortedLevels = Array.from(grouped.entries()).sort(([a], [b]) => a.localeCompare(b));
-
-  const totalSections = cards.length;
-  const totalActive = cards.reduce((n, c) => n + c.active, 0);
-
-  const today = new Date().toISOString().slice(0, 10);
+  const insights = attendanceInsights({
+    attendancePct: kpisResult.current.attendancePct,
+    attendancePctPrior: kpisResult.comparison.attendancePct,
+    late: kpisResult.current.late,
+    latePrior: kpisResult.comparison.late,
+    excused: kpisResult.current.excused,
+    absent: kpisResult.current.absent,
+    absentPrior: kpisResult.comparison.absent,
+    encodedDays: kpisResult.current.encodedDays,
+  });
 
   return (
     <PageShell>
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Attendance · Daily entry
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            {isTeacherOnly ? 'Your sections.' : 'Pick a section.'}
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            {isTeacherOnly
-              ? 'The sections you form-advise. Click through to mark daily attendance for the chosen date.'
-              : 'Every section in the current academic year. Click through to mark or review daily attendance.'}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {ay && (
-            <Badge
-              variant="outline"
-              className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-            >
-              {ay.ay_code}
-            </Badge>
-          )}
-          {currentTerm && (
-            <Badge
-              variant="outline"
-              className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-            >
-              {currentTerm.label}
-            </Badge>
-          )}
-        </div>
-      </header>
+      <DashboardHero
+        eyebrow="Attendance · Dashboard"
+        title="Attendance at a glance"
+        description="Daily attendance, absence patterns, day-type mix, top-absent students. Section picker for marking today's attendance is one click away."
+        badges={[{ label: selectedAy }]}
+        actions={
+          <Button asChild size="sm">
+            <Link href="/attendance/sections">
+              Mark attendance
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </Button>
+        }
+      />
 
-      <div className="@container/main">
-        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2">
-          <SummaryCard
-            description={isTeacherOnly ? 'Your sections' : 'Total sections'}
-            value={totalSections}
-            icon={School}
-            footerTitle={`${sortedLevels.length} ${sortedLevels.length === 1 ? 'level' : 'levels'}`}
-            footerDetail={ay?.label ?? 'No current AY'}
-          />
-          <SummaryCard
-            description="Students covered"
-            value={totalActive}
-            icon={Users}
-            footerTitle="Currently enrolled"
-            footerDetail="Across the sections above"
-          />
-        </div>
-      </div>
+      <ComparisonToolbar
+        ayCode={selectedAy}
+        ayCodes={ayCodes}
+        range={{ from: rangeInput.from, to: rangeInput.to }}
+        comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+        termWindows={windows.term}
+        ayWindows={windows.ay}
+        showAySwitcher={false}
+      />
 
-      {sortedLevels.length === 0 && (
-        <Card className="items-center py-12 text-center">
-          <CardContent className="flex flex-col items-center gap-3">
-            <div className="font-serif text-lg font-semibold text-foreground">
-              {isTeacherOnly ? 'No sections assigned' : 'No sections yet'}
-            </div>
-            <div className="text-sm text-muted-foreground">
-              {isTeacherOnly
-                ? 'The registrar has not assigned you as a form adviser for any section yet.'
-                : 'Run the seed SQL or ask the registrar to create sections for the current AY.'}
-            </div>
+      <InsightsPanel insights={insights} />
+
+      {/* KPIs */}
+      <section className="grid gap-4 xl:grid-cols-4">
+        <MetricCard
+          label="Attendance rate"
+          value={kpisResult.current.attendancePct}
+          format="percent"
+          icon={UserCheck}
+          intent={kpisResult.current.attendancePct >= 95 ? "good" : "warning"}
+          delta={kpisResult.delta}
+          deltaGoodWhen="up"
+          comparisonLabel={comparisonLabel}
+          sparkline={dailySeries.current.slice(-14)}
+        />
+        <MetricCard
+          label="Late incidents"
+          value={kpisResult.current.late}
+          icon={Clock}
+          intent={kpisResult.current.late > kpisResult.comparison.late ? "warning" : "default"}
+          deltaGoodWhen="down"
+          subtext={`${kpisResult.comparison.late} prior`}
+        />
+        <MetricCard
+          label="Excused"
+          value={kpisResult.current.excused}
+          icon={CalendarCheck}
+          intent="default"
+          subtext={`${kpisResult.comparison.excused} prior`}
+        />
+        <MetricCard
+          label="Absences"
+          value={kpisResult.current.absent}
+          icon={UserX}
+          intent={kpisResult.current.absent > 0 ? "bad" : "good"}
+          deltaGoodWhen="down"
+          subtext={`${kpisResult.comparison.absent} prior`}
+        />
+      </section>
+
+      {/* Daily attendance % trend */}
+      {dailySeries.current.length > 1 && (
+        <Card>
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Daily attendance
+            </CardDescription>
+            <CardTitle className="font-serif text-xl">% attended per day</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TrendChart
+              label="Attendance %"
+              current={dailySeries.current}
+              comparison={dailySeries.comparison}
+              yFormat="percent"
+            />
           </CardContent>
         </Card>
       )}
 
-      {sortedLevels.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            By level
-          </h2>
-          <div className="space-y-5">
-            {sortedLevels.map(([level, sects]) => {
-              const sorted = sects.slice().sort((a, b) => a.name.localeCompare(b.name));
-              return (
-                <Card key={level} className="@container/card gap-0 py-0">
-                  <CardHeader className="border-b border-border py-5">
-                    <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-                      Level
-                    </CardDescription>
-                    <CardTitle className="font-serif text-[22px] font-semibold tracking-tight text-foreground">
-                      {level}
-                    </CardTitle>
-                    <CardAction>
-                      <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-                        <CalendarCheck className="size-5" />
-                      </div>
-                    </CardAction>
-                  </CardHeader>
-                  <ul className="divide-y divide-border">
-                    {sorted.map((s) => (
-                      <li key={s.id}>
-                        <Link
-                          href={`/attendance/${s.id}?date=${today}`}
-                          className="group flex items-center gap-4 px-6 py-4 transition-colors hover:bg-muted/40"
-                        >
-                          <div className="flex size-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-                            <GraduationCap className="size-5" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="font-serif text-[17px] font-semibold leading-snug tracking-tight text-foreground">
-                              {s.name}
-                            </div>
-                            <div className="mt-0.5 text-xs">
-                              <span className="font-mono tabular-nums text-foreground">
-                                {s.active}
-                                <span className="ml-1 text-muted-foreground">active</span>
-                              </span>
-                            </div>
-                          </div>
-                          <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </PageShell>
-  );
-}
+      {/* EX reason + Day type donuts */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Excused reason mix
+            </CardDescription>
+            <CardTitle className="font-serif text-xl">Why absences are excused</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {exMix.length > 0 ? (
+              <DonutChart data={exMix} centerValue={exMix.reduce((s, d) => s + d.value, 0)} centerLabel="Total EX" />
+            ) : (
+              <div className="flex h-40 items-center justify-center text-xs text-ink-4">
+                No excused absences in range.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Day-type distribution
+            </CardDescription>
+            <CardTitle className="font-serif text-xl">Calendar make-up of range</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {dayTypes.length > 0 ? (
+              <DonutChart data={dayTypes} centerValue={dayTypes.reduce((s, d) => s + d.value, 0)} centerLabel="Days" />
+            ) : (
+              <div className="flex h-40 items-center justify-center text-xs text-ink-4">No calendar data in range.</div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
-function SummaryCard({
-  description,
-  value,
-  icon: Icon,
-  footerTitle,
-  footerDetail,
-}: {
-  description: string;
-  value: number;
-  icon: React.ComponentType<{ className?: string }>;
-  footerTitle: string;
-  footerDetail: string;
-}) {
-  return (
-    <Card className="@container/card">
-      <CardHeader>
-        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-          {description}
-        </CardDescription>
-        <CardTitle className="font-serif text-[32px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]">
-          {value.toLocaleString('en-SG')}
-        </CardTitle>
-        <CardAction>
-          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <Icon className="size-4" />
-          </div>
-        </CardAction>
-      </CardHeader>
-      <CardFooter className="flex-col items-start gap-1 text-sm">
-        <p className="font-medium text-foreground">{footerTitle}</p>
-        <p className="text-xs text-muted-foreground">{footerDetail}</p>
-      </CardFooter>
-    </Card>
+      {/* Top-absent students table */}
+      <Card>
+        <CardHeader>
+          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+            Needs attention
+          </CardDescription>
+          <CardTitle className="font-serif text-xl">Top-absent students</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {topAbsent.length === 0 ? (
+            <div className="flex h-32 items-center justify-center text-xs text-ink-4">
+              No absences in range. {String.fromCodePoint(0x1f389)}
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left font-mono text-[10px] uppercase tracking-wider text-ink-4">
+                  <th className="py-2">Student</th>
+                  <th className="py-2">Section</th>
+                  <th className="py-2 text-right">Absences</th>
+                  <th className="py-2 text-right">Lates</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topAbsent.map((r) => (
+                  <tr key={r.sectionStudentId} className="border-b border-border/60">
+                    <td className="py-2 font-medium text-foreground">{r.studentName}</td>
+                    <td className="py-2 text-ink-4">{r.sectionName}</td>
+                    <td className="py-2 text-right font-mono tabular-nums">{r.absences}</td>
+                    <td className="py-2 text-right font-mono tabular-nums text-ink-4">{r.lates}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Trust strip */}
+      <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <CalendarCheck className="size-3" strokeWidth={2.25} />
+        <span>{selectedAy}</span>
+        <span className="text-border">·</span>
+        <span>{kpisResult.current.encodedDays.toLocaleString("en-SG")} encoded days</span>
+        <span className="text-border">·</span>
+        <span>Cache 5m</span>
+        <span className="text-border">·</span>
+        <span>Audit-logged</span>
+      </div>
+    </PageShell>
   );
 }

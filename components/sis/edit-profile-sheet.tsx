@@ -8,6 +8,7 @@ import { useForm, type UseFormReturn } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import {
   Form,
   FormControl,
@@ -239,6 +240,10 @@ function buildDefaults(initial: Partial<ProfileUpdateInput>): ProfileUpdateInput
   return out as ProfileUpdateInput;
 }
 
+// Radix Select rejects empty-string item values. Sentinel stays client-side
+// only; onValueChange maps it back to null before RHF sees it.
+const TRIBOOL_UNSET = '__unset';
+
 function SchemaField({
   cfg,
   form,
@@ -255,19 +260,21 @@ function SchemaField({
         const wrapperClass = cfg.wide ? 'sm:col-span-2' : '';
         if (kind === 'tribool') {
           const v = field.value as boolean | null | undefined;
-          const value = v === true ? 'yes' : v === false ? 'no' : '';
+          const value = v === true ? 'yes' : v === false ? 'no' : TRIBOOL_UNSET;
           return (
             <FormItem className={wrapperClass}>
               <FormLabel className="text-xs">{cfg.label}</FormLabel>
               <Select
                 value={value}
-                onValueChange={(next) => field.onChange(next === 'yes' ? true : next === 'no' ? false : null)}
+                onValueChange={(next) =>
+                  field.onChange(next === 'yes' ? true : next === 'no' ? false : null)
+                }
               >
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Not set" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Not set</SelectItem>
+                  <SelectItem value={TRIBOOL_UNSET}>Not set</SelectItem>
                   <SelectItem value="yes">Yes</SelectItem>
                   <SelectItem value="no">No</SelectItem>
                 </SelectContent>
@@ -292,15 +299,29 @@ function SchemaField({
             </FormItem>
           );
         }
+        if (kind === 'date') {
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <FormControl>
+                <DatePicker
+                  value={(field.value as string | null) ?? ''}
+                  onChange={(next) => field.onChange(next === '' ? null : next)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          );
+        }
         return (
           <FormItem className={wrapperClass}>
             <FormLabel className="text-xs">{cfg.label}</FormLabel>
             <FormControl>
               <Input
-                type={kind === 'date' ? 'date' : 'text'}
+                type="text"
                 value={(field.value as string | null) ?? ''}
                 onChange={(e) => field.onChange(e.target.value === '' ? null : e.target.value)}
-                placeholder={kind === 'date' ? 'YYYY-MM-DD' : (cfg.placeholder ?? '')}
+                placeholder={cfg.placeholder ?? ''}
               />
             </FormControl>
             <FormMessage />

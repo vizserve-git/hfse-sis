@@ -1,20 +1,21 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import Image from 'next/image';
 import {
+  CalendarRange,
   FileStack,
+  FolderOpen,
   History,
-  Inbox,
   LayoutDashboard,
   LogOut,
   UserCog,
+  Users,
   type LucideIcon,
-} from 'lucide-react';
+} from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 
-import { createClient } from '@/lib/supabase/client';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sidebar,
   SidebarContent,
@@ -27,28 +28,33 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-} from '@/components/ui/sidebar';
-import { NAV_BY_MODULE, type NavItem, type Role } from '@/lib/auth/roles';
+} from "@/components/ui/sidebar";
+import { NAV_BY_MODULE, type NavItem, type Role } from "@/lib/auth/roles";
+import { createClient } from "@/lib/supabase/client";
 
 const ROLE_LABEL: Record<string, string> = {
-  admissions: 'Admissions',
-  registrar: 'Registrar',
-  school_admin: 'School Admin',
-  admin: 'Admin',
-  superadmin: 'Superadmin',
+  admissions: "Admissions",
+  registrar: "Registrar",
+  school_admin: "School Admin",
+  admin: "Admin",
+  superadmin: "Superadmin",
 };
 
 const ICON_BY_HREF: Record<string, LucideIcon> = {
-  '/admissions': LayoutDashboard,
-  '/admissions/applications': FileStack,
-  '/admissions/inquiries': Inbox,
-  '/admissions/audit-log': History,
+  "/admissions": LayoutDashboard,
+  "/admissions/applications": FileStack,
+  "/admissions/audit-log": History,
+  // Cross-module quicklinks — save a module-switcher click on the three
+  // most-common adjacent surfaces admissions staff pivot to.
+  "/records/students": Users,
+  "/p-files": FolderOpen,
+  "/sis/ay-setup": CalendarRange,
 };
 
-const PREFIX_MATCH_HREFS = new Set(['/admissions/applications']);
+const PREFIX_MATCH_HREFS = new Set(["/admissions/applications"]);
 
 const ACTIVE_INDICATOR =
-  'relative h-9 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-r-full before:bg-brand-indigo before:opacity-0 before:transition-opacity data-[active=true]:before:opacity-100';
+  "relative h-9 before:absolute before:left-0 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-r-full before:bg-brand-indigo before:opacity-0 before:transition-opacity data-[active=true]:before:opacity-100";
 
 export function AdmissionsSidebar({ email, role }: { email: string; role: string }) {
   const router = useRouter();
@@ -57,21 +63,21 @@ export function AdmissionsSidebar({ email, role }: { email: string; role: string
   async function signOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.replace('/login');
+    router.replace("/login");
     router.refresh();
   }
 
   const initials =
     email
-      .split('@')[0]
+      .split("@")[0]
       .split(/[._-]/)
-      .map((p) => p[0]?.toUpperCase() ?? '')
-      .join('')
-      .slice(0, 2) || 'AD';
+      .map((p) => p[0]?.toUpperCase() ?? "")
+      .join("")
+      .slice(0, 2) || "AD";
 
   function isActive(item: NavItem): boolean {
     if (PREFIX_MATCH_HREFS.has(item.href)) {
-      return pathname === item.href || pathname.startsWith(item.href + '/');
+      return pathname === item.href || pathname.startsWith(item.href + "/");
     }
     return pathname === item.href;
   }
@@ -79,9 +85,7 @@ export function AdmissionsSidebar({ email, role }: { email: string; role: string
   const sections = NAV_BY_MODULE.admissions
     .map((section) => ({
       ...section,
-      items: section.items.filter(
-        (item) => !item.requiresRoles || item.requiresRoles.includes(role as Role),
-      ),
+      items: section.items.filter((item) => !item.requiresRoles || item.requiresRoles.includes(role as Role)),
     }))
     .filter((section) => section.items.length > 0);
 
@@ -90,15 +94,8 @@ export function AdmissionsSidebar({ email, role }: { email: string; role: string
       <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
         <Link
           href="/admissions"
-          className="flex items-center gap-3 outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-        >
-          <Image
-            src="/hfse-logo-favicon.webp"
-            alt=""
-            width={36}
-            height={36}
-            className="size-9 shrink-0 rounded-xl"
-          />
+          className="flex items-center gap-3 outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+          <Image src="/hfse-logo-favicon.webp" alt="" width={36} height={36} className="size-9 shrink-0 rounded-xl" />
           <div className="flex min-w-0 flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/60">
               HFSE
@@ -130,8 +127,7 @@ export function AdmissionsSidebar({ email, role }: { email: string; role: string
                             asChild
                             isActive={isActive(item)}
                             tooltip={item.label}
-                            className={ACTIVE_INDICATOR}
-                          >
+                            className={ACTIVE_INDICATOR}>
                             <Link href={item.href}>
                               <Icon />
                               <span>{item.label}</span>
@@ -154,10 +150,7 @@ export function AdmissionsSidebar({ email, role }: { email: string; role: string
             {initials}
           </div>
           <div className="min-w-0 flex-1 leading-tight">
-            <div
-              className="truncate text-xs font-medium text-sidebar-foreground"
-              title={email}
-            >
+            <div className="truncate text-xs font-medium text-sidebar-foreground" title={email}>
               {email}
             </div>
             <div className="mt-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/60">
@@ -169,10 +162,9 @@ export function AdmissionsSidebar({ email, role }: { email: string; role: string
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              isActive={pathname === '/account'}
+              isActive={pathname === "/account"}
               tooltip="Account"
-              className={ACTIVE_INDICATOR}
-            >
+              className={ACTIVE_INDICATOR}>
               <Link href="/account">
                 <UserCog />
                 <span>Account</span>
@@ -183,8 +175,7 @@ export function AdmissionsSidebar({ email, role }: { email: string; role: string
             <SidebarMenuButton
               onClick={signOut}
               tooltip="Sign out"
-              className="h-9 text-sidebar-foreground/70 hover:bg-destructive/10 hover:text-destructive"
-            >
+              className="h-9 text-sidebar-foreground/70 hover:bg-destructive/10 hover:text-destructive">
               <LogOut />
               <span>Sign out</span>
             </SidebarMenuButton>

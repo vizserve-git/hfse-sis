@@ -1,47 +1,63 @@
-import Link from 'next/link';
-import { redirect } from 'next/navigation';
-import { ArrowRight, ChartBar, FileStack, Hourglass, Inbox, Users } from 'lucide-react';
+import { ArrowRight, ChartBar, FileStack, Hourglass, TrendingUp, UserPlus, Users } from "lucide-react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { AssessmentOutcomesChart } from '@/components/admissions/assessment-outcomes-chart';
-import { AySwitcher } from '@/components/admissions/ay-switcher';
-import { ConversionFunnelChart } from '@/components/admissions/conversion-funnel-chart';
-import { OutdatedApplicationsTable } from '@/components/admissions/outdated-applications-table';
-import { ReferralSourceChart } from '@/components/admissions/referral-source-chart';
-import { TimeToEnrollmentCard } from '@/components/admissions/time-to-enrollment-card';
-import { PipelineStageChart } from '@/components/sis/pipeline-stage-chart';
-import { Badge } from '@/components/ui/badge';
-import { PageShell } from '@/components/ui/page-shell';
-import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+import { AssessmentOutcomesChart } from "@/components/admissions/assessment-outcomes-chart";
+import { ConversionFunnelChart } from "@/components/admissions/conversion-funnel-chart";
+import { OutdatedApplicationsTable } from "@/components/admissions/outdated-applications-table";
+import { ReferralSourceChart } from "@/components/admissions/referral-source-chart";
+import { TimeToEnrollmentCard } from "@/components/admissions/time-to-enrollment-card";
+import { ActionList, type ActionItem } from "@/components/dashboard/action-list";
+import { ComparisonBarChart } from "@/components/dashboard/charts/comparison-bar-chart";
+import { TrendChart } from "@/components/dashboard/charts/trend-chart";
+import { ComparisonToolbar } from "@/components/dashboard/comparison-toolbar";
+import { DashboardHero } from "@/components/dashboard/dashboard-hero";
+import { InsightsPanel } from "@/components/dashboard/insights-panel";
+import { MetricCard } from "@/components/dashboard/metric-card";
+import { PipelineStageChart } from "@/components/sis/pipeline-stage-chart";
 import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { PageShell } from "@/components/ui/page-shell";
+import { getCurrentAcademicYear, listAyCodes as listAcademicAyCodes } from "@/lib/academic-year";
+import {
+  getAdmissionsKpisRange,
+  getApplicationsVelocityRange,
   getAssessmentOutcomes,
   getAverageTimeToEnrollment,
   getConversionFunnel,
   getOutdatedApplications,
   getReferralSourceBreakdown,
-} from '@/lib/admissions/dashboard';
-import { getPipelineStageBreakdown } from '@/lib/sis/dashboard';
-import { getSisDashboardSummary } from '@/lib/sis/queries';
-import { getSessionUser } from '@/lib/supabase/server';
-import { createServiceClient } from '@/lib/supabase/service';
+  getTimeToEnrollHistogram,
+} from "@/lib/admissions/dashboard";
+import { admissionsInsights } from "@/lib/dashboard/insights";
+import { formatRangeLabel, resolveRange, type DashboardSearchParams } from "@/lib/dashboard/range";
+import { getDashboardWindows } from "@/lib/dashboard/windows";
+import { getPipelineStageBreakdown } from "@/lib/sis/dashboard";
+import { getSisDashboardSummary } from "@/lib/sis/queries";
+import { getSessionUser } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 
 // Admissions-module dashboard: pre-enrolment funnel metrics only. Enrolled
 // student analytics live on /records. This is the admissions team's home
 // surface — they track conversion, time-to-enroll, outdated apps here.
-export default async function AdmissionsDashboard({
-  searchParams,
-}: {
-  searchParams: Promise<{ ay?: string }>;
-}) {
+export default async function AdmissionsDashboard({ searchParams }: { searchParams: Promise<DashboardSearchParams> }) {
   const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
+  if (!sessionUser) redirect("/login");
   if (
-    sessionUser.role !== 'admissions' &&
-    sessionUser.role !== 'registrar' &&
-    sessionUser.role !== 'school_admin' &&
-    sessionUser.role !== 'admin' &&
-    sessionUser.role !== 'superadmin'
+    sessionUser.role !== "admissions" &&
+    sessionUser.role !== "registrar" &&
+    sessionUser.role !== "school_admin" &&
+    sessionUser.role !== "admin" &&
+    sessionUser.role !== "superadmin"
   ) {
-    redirect('/');
+    redirect("/");
   }
 
   const service = createServiceClient();
@@ -54,96 +70,181 @@ export default async function AdmissionsDashboard({
     );
   }
 
-  const { ay: ayParam } = await searchParams;
-  const ayCodes = await listAyCodes(service);
+  const resolvedSearch = await searchParams;
+  const ayParam = typeof resolvedSearch.ay === "string" ? resolvedSearch.ay : undefined;
+  const ayCodes = await listAcademicAyCodes(service);
   const selectedAy = ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
   const isCurrentAy = selectedAy === currentAy.ay_code;
 
-  const [summary, pipelineStages, timeToEnroll, funnel, outdated, assessment, referral] =
-    await Promise.all([
-      getSisDashboardSummary(selectedAy),
-      getPipelineStageBreakdown(selectedAy),
-      getAverageTimeToEnrollment(selectedAy),
-      getConversionFunnel(selectedAy),
-      getOutdatedApplications(selectedAy),
-      getAssessmentOutcomes(selectedAy),
-      getReferralSourceBreakdown(selectedAy),
-    ]);
+  const windows = await getDashboardWindows(selectedAy);
+  const rangeInput = resolveRange(resolvedSearch, windows, selectedAy);
+
+  const [
+    summary,
+    pipelineStages,
+    timeToEnroll,
+    funnel,
+    outdated,
+    assessment,
+    referral,
+    kpisResult,
+    velocity,
+    histogram,
+  ] = await Promise.all([
+    getSisDashboardSummary(selectedAy),
+    getPipelineStageBreakdown(selectedAy),
+    getAverageTimeToEnrollment(selectedAy),
+    getConversionFunnel(selectedAy),
+    getOutdatedApplications(selectedAy),
+    getAssessmentOutcomes(selectedAy),
+    getReferralSourceBreakdown(selectedAy),
+    getAdmissionsKpisRange(rangeInput),
+    getApplicationsVelocityRange(rangeInput),
+    getTimeToEnrollHistogram(selectedAy),
+  ]);
+
+  const comparisonLabel = `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`;
+
+  // Build insights from already-fetched data — pure derivation, no extra DB calls.
+  const topRef = referral[0];
+  const totalRef = referral.reduce((s, r) => s + r.count, 0);
+  const biggestDrop = funnel.reduce(
+    (acc, stage) => (stage.dropOffPct > (acc?.dropOffPct ?? 0) ? stage : acc),
+    funnel[0] ?? null,
+  );
+  const insights = admissionsInsights({
+    applications: kpisResult.current.applicationsInRange,
+    enrolled: kpisResult.current.enrolledInRange,
+    conversionPct: kpisResult.current.conversionPct,
+    conversionPctPrior: kpisResult.comparison.conversionPct,
+    avgDaysToEnroll: kpisResult.current.avgDaysToEnroll,
+    avgDaysToEnrollPrior: kpisResult.comparison.avgDaysToEnroll,
+    appsDelta: kpisResult.delta,
+    outdatedCount: outdated.length,
+    topReferral: topRef ? { source: topRef.source, count: topRef.count, totalCount: totalRef } : undefined,
+    funnelDropOff: biggestDrop ? { stage: biggestDrop.stage, dropOffPct: biggestDrop.dropOffPct } : undefined,
+  });
+
+  // Build action list — top 6 stalled applicants.
+  const actionItems: ActionItem[] = outdated.slice(0, 6).map((row) => ({
+    label: row.fullName,
+    sublabel: `${row.status} · ${row.levelApplied ?? "—"}`,
+    meta: row.daysSinceUpdate === null ? "Never updated" : `${row.daysSinceUpdate}d stale`,
+    severity: row.daysSinceUpdate === null || row.daysSinceUpdate >= 30 ? "bad" : "warn",
+    href: `/admissions/applications/${row.enroleeNumber}`,
+  }));
 
   return (
     <PageShell>
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-3">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Admissions · Pre-enrolment funnel
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Admissions dashboard.
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Inquiry tracking, application pipeline, conversion funnel, and time-to-enroll —
-            everything up to the point a student is classified as Enrolled. Once enrolled,
-            the permanent cross-year record lives in Records.
-          </p>
-        </div>
-        <div className="flex flex-col items-start gap-2 md:items-end">
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-            >
-              {selectedAy}
-            </Badge>
-            {isCurrentAy ? (
-              <Badge className="h-7 border-brand-mint bg-brand-mint/30 px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-ink">
-                Current
-              </Badge>
-            ) : (
-              <Badge
-                variant="outline"
-                className="h-7 border-border bg-white px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-              >
-                Historical
-              </Badge>
-            )}
-          </div>
-          <AySwitcher current={selectedAy} options={ayCodes} />
-        </div>
-      </header>
+      <DashboardHero
+        eyebrow="Admissions · Pre-enrolment funnel"
+        title="Admissions dashboard"
+        description="Inquiry → applied → interviewed → offered → accepted. Once enrolled, the permanent record lives in Records."
+        badges={[
+          { label: selectedAy },
+          { label: isCurrentAy ? "Current" : "Historical", tone: isCurrentAy ? "mint" : "muted" },
+        ]}
+      />
 
-      <section className="@container/main">
-        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
-          <SummaryStat label="Total applications" value={summary.totalStudents} icon={Users} footnote="In this AY" />
-          <SummaryStat label="In pipeline" value={summary.pending} icon={Hourglass} footnote="Pre-enrolment stages" />
-          <SummaryStat label="Enrolled (final stage)" value={summary.enrolled} icon={FileStack} footnote="Active + conditional" />
-          <SummaryStat label="Avg time to enroll" value={Math.round(timeToEnroll.avgDays ?? 0)} icon={Hourglass} footnote={`days (n=${timeToEnroll.sampleSize ?? 0})`} />
-        </div>
-      </section>
+      <ComparisonToolbar
+        ayCode={selectedAy}
+        ayCodes={ayCodes}
+        range={{ from: rangeInput.from, to: rangeInput.to }}
+        comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+        termWindows={windows.term}
+        ayWindows={windows.ay}
+      />
 
-      <section className="grid gap-4 md:grid-cols-2">
-        <QuickLink
-          href={`/admissions/applications?ay=${selectedAy}`}
+      <InsightsPanel insights={insights} />
+
+      {/* Range-aware KPIs */}
+      <section className="grid gap-4 xl:grid-cols-4">
+        <MetricCard
+          label="Applications (range)"
+          value={kpisResult.current.applicationsInRange}
           icon={FileStack}
-          title="Applications"
-          description="Browse every application in flight — inquiry, applied, interviewed, offered, accepted. Profile + family + documents edit here."
+          intent="default"
+          delta={kpisResult.delta}
+          deltaGoodWhen="up"
+          comparisonLabel={comparisonLabel}
+          sparkline={velocity.current.slice(-14)}
         />
-        <QuickLink
-          href="/admissions/inquiries"
-          icon={Inbox}
-          title="Inquiries"
-          description="SharePoint-sourced inquiry list (pending HFSE IT credential provisioning). Goal: close the gap from inquiry to application."
+        <MetricCard
+          label="Enrolled (range)"
+          value={kpisResult.current.enrolledInRange}
+          icon={UserPlus}
+          intent="good"
+          subtext={`${kpisResult.comparison.enrolledInRange} prior`}
+        />
+        <MetricCard
+          label="Conversion rate"
+          value={kpisResult.current.conversionPct}
+          format="percent"
+          icon={TrendingUp}
+          intent="default"
+          subtext={`${kpisResult.comparison.conversionPct.toFixed(1)}% prior`}
+        />
+        <MetricCard
+          label="Avg time to enroll"
+          value={kpisResult.current.avgDaysToEnroll}
+          format="days"
+          icon={Hourglass}
+          intent="default"
+          subtext={`n=${kpisResult.current.sampleSize} · ${kpisResult.comparison.avgDaysToEnroll}d prior`}
+          deltaGoodWhen="down"
         />
       </section>
 
+      {/* Bento row 1: intake velocity (wide) + follow-up action list (narrow) */}
+      <section className="grid gap-4 lg:grid-cols-3">
+        {velocity.current.length > 1 && (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                Applications per day
+              </CardDescription>
+              <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+                Intake velocity
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TrendChart label="Applications" current={velocity.current} comparison={velocity.comparison} />
+            </CardContent>
+          </Card>
+        )}
+        <div className="lg:col-span-1">
+          <ActionList
+            id="outdated-applications"
+            title="Follow up today"
+            description="Stages not moved in ≥ 7 days."
+            items={actionItems}
+            emptyLabel="Everyone has been touched recently."
+            viewAllHref={`/admissions/applications?ay=${selectedAy}`}
+          />
+        </div>
+      </section>
+
+      {/* Bento row 2: conversion funnel (wide) + time-to-enroll histogram (narrow) */}
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <ConversionFunnelChart data={funnel} />
         </div>
-        <div className="lg:col-span-1">
-          <TimeToEnrollmentCard data={timeToEnroll} />
-        </div>
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Time to enrollment
+            </CardDescription>
+            <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Days to close
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ComparisonBarChart data={histogram.map((b) => ({ category: b.label, current: b.count }))} height={240} />
+          </CardContent>
+        </Card>
       </section>
 
+      {/* Bento row 3: pipeline stage (wide) + assessment outcomes (narrow) */}
       <section className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <PipelineStageChart data={pipelineStages} />
@@ -153,19 +254,65 @@ export default async function AdmissionsDashboard({
         </div>
       </section>
 
-      <section className="space-y-3">
+      {/* Referral + time-to-enrol + browse — three-up footer row */}
+      <section className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-1">
+          <ReferralSourceChart data={referral} />
+        </div>
+        <div className="lg:col-span-1">
+          <TimeToEnrollmentCard data={timeToEnroll} />
+        </div>
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+              Browse
+            </CardDescription>
+            <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
+              Applications
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <QuickLink
+              href={`/admissions/applications?ay=${selectedAy}`}
+              icon={FileStack}
+              title="All applications"
+              description="Every application in flight."
+            />
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Static AY counters — dashboard-01 SectionCards pattern */}
+      <section className="@container/main">
+        <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
+          <SummaryStat label="Total applications" value={summary.totalStudents} icon={Users} footnote="In this AY" />
+          <SummaryStat label="In pipeline" value={summary.pending} icon={Hourglass} footnote="Pre-enrolment stages" />
+          <SummaryStat
+            label="Enrolled (final stage)"
+            value={summary.enrolled}
+            icon={FileStack}
+            footnote="Active + conditional"
+          />
+          <SummaryStat
+            label="Avg time to enroll"
+            value={Math.round(timeToEnroll.avgDays ?? 0)}
+            icon={Hourglass}
+            footnote={`days (n=${timeToEnroll.sampleSize ?? 0})`}
+          />
+        </div>
+      </section>
+
+      <section className="space-y-3 print:hidden">
         <div className="space-y-1">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Needs attention
+            Full list
           </p>
           <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
-            Outdated applications
+            All outdated applications
           </h2>
         </div>
         <OutdatedApplicationsTable rows={outdated} />
       </section>
-
-      <ReferralSourceChart data={referral} />
 
       <div className="mt-2 flex items-center gap-2 border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         <ChartBar className="size-3" strokeWidth={2.25} />
@@ -191,23 +338,22 @@ function SummaryStat({
   footnote: string;
 }) {
   return (
-    <div
-      data-slot="card"
-      className="@container/card flex flex-col gap-6 rounded-xl border bg-card py-6 text-card-foreground shadow-sm"
-    >
-      <div className="grid grid-cols-[1fr_auto] items-start gap-2 px-6">
-        <div className="space-y-1.5">
-          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">{label}</p>
-          <p className="font-serif text-[32px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]">
-            {value.toLocaleString('en-SG')}
-          </p>
-        </div>
-        <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-          <Icon className="size-4" />
-        </div>
-      </div>
-      <p className="px-6 text-xs text-muted-foreground">{footnote}</p>
-    </div>
+    <Card className="@container/card">
+      <CardHeader>
+        <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+          {label}
+        </CardDescription>
+        <CardTitle className="font-serif text-[32px] font-semibold leading-none tabular-nums text-foreground @[240px]/card:text-[38px]">
+          {value.toLocaleString("en-SG")}
+        </CardTitle>
+        <CardAction>
+          <div className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <Icon className="size-4" />
+          </div>
+        </CardAction>
+      </CardHeader>
+      <CardFooter className="text-xs text-muted-foreground">{footnote}</CardFooter>
+    </Card>
   );
 }
 
@@ -225,8 +371,7 @@ function QuickLink({
   return (
     <Link
       href={href}
-      className="group flex items-start gap-4 rounded-xl border border-hairline bg-card p-5 transition-all hover:-translate-y-0.5 hover:border-brand-indigo/40 hover:shadow-sm"
-    >
+      className="group flex items-start gap-4 rounded-xl border border-hairline bg-card p-5 transition-all hover:-translate-y-0.5 hover:border-brand-indigo/40 hover:shadow-sm">
       <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
         <Icon className="size-4" />
       </div>

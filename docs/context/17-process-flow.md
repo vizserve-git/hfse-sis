@@ -12,7 +12,7 @@ Positioning: cross-cutting design concern, similar in spirit to `11-performance-
 
 | # | Stage | Surface today | Module |
 |---|---|---|---|
-| 0 | **Inquiry** | SharePoint list (external) | — (planned as Records Phase 4, blocked on creds) |
+| 0 | **Inquiry** | Tracked outside the SIS (admissions' own workflow) | — (Records Phase 4 SharePoint sync was dropped 2026-04-24) |
 | 1 | **Application** | `enrol.hfse.edu.sg` form → `ay{YY}_enrolment_applications` row | Parent portal → Admissions |
 | 2 | **Registration** | Records Stage tab → `registrationStatus` | Records |
 | 3 | **Documents** | Parent upload on enrolment portal + P-Files staff upload + Records validation (`{slotKey}Status = Valid / Rejected`) | P-Files + Records |

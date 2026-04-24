@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft, CheckCircle2, FileWarning, ShieldAlert } from 'lucide-react';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { getStudentDocumentDetail } from '@/lib/p-files/queries';
 import { DOCUMENT_SLOTS, GROUP_LABELS, type DocumentGroup } from '@/lib/p-files/document-config';
 import { DocumentCard } from '@/components/p-files/document-card';
@@ -12,10 +12,13 @@ import { PageShell } from '@/components/ui/page-shell';
 
 export default async function StudentDocumentDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ enroleeNumber: string }>;
+  searchParams: Promise<{ ay?: string }>;
 }) {
   const { enroleeNumber } = await params;
+  const { ay: ayParam } = await searchParams;
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (sessionUser.role !== 'p-file' && sessionUser.role !== 'admin' && sessionUser.role !== 'superadmin') redirect('/');
@@ -24,7 +27,14 @@ export default async function StudentDocumentDetailPage({
   const currentAy = await getCurrentAcademicYear(service);
   if (!currentAy) notFound();
 
-  const student = await getStudentDocumentDetail(currentAy.ay_code, enroleeNumber);
+  // Respect the `?ay=` searchParam so links from the historical-AY dashboard
+  // resolve against the right admissions tables. Falls back to current AY
+  // when the param is missing or not a known AY.
+  const ayCodes = await listAyCodes(service);
+  const selectedAy =
+    ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy.ay_code;
+
+  const student = await getStudentDocumentDetail(selectedAy, enroleeNumber);
   if (!student) notFound();
 
   const docRow = student.rawDocRow;
@@ -50,11 +60,11 @@ export default async function StudentDocumentDetailPage({
   return (
     <PageShell>
       <Link
-        href="/p-files"
+        href={{ pathname: '/p-files', query: { ay: selectedAy } }}
         className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
-        All students
+        All students · {selectedAy}
       </Link>
 
       <header className="space-y-4">

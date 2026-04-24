@@ -17,7 +17,7 @@ export function ExpiringDocumentsPanel({
   rows,
   ayCode,
   windowDays = 60,
-  studentHrefBase = '/records/students',
+  studentHrefBase = '/admissions/applications',
   viewAllHref,
 }: {
   rows: ExpiringDocRow[];

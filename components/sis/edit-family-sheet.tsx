@@ -8,6 +8,7 @@ import { useForm, type FieldValues, type Path, type Resolver, type UseFormReturn
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import {
   Form,
   FormControl,
@@ -239,7 +240,7 @@ function SchemaField<T extends FieldValues>({
         const wrapperClass = cfg.wide ? 'sm:col-span-2' : '';
         if (kind === 'tribool') {
           const v = field.value as boolean | null | undefined;
-          const value = v === true ? 'yes' : v === false ? 'no' : '';
+          const value = v === true ? 'yes' : v === false ? 'no' : TRIBOOL_UNSET;
           return (
             <FormItem className={wrapperClass}>
               <FormLabel className="text-xs">{cfg.label}</FormLabel>
@@ -253,11 +254,25 @@ function SchemaField<T extends FieldValues>({
                   <SelectValue placeholder="Not set" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Not set</SelectItem>
+                  <SelectItem value={TRIBOOL_UNSET}>Not set</SelectItem>
                   <SelectItem value="yes">Yes</SelectItem>
                   <SelectItem value="no">No</SelectItem>
                 </SelectContent>
               </Select>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+        if (kind === 'date') {
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <FormControl>
+                <DatePicker
+                  value={(field.value as string | null) ?? ''}
+                  onChange={(next) => field.onChange(next === '' ? null : next)}
+                />
+              </FormControl>
               <FormMessage />
             </FormItem>
           );
@@ -267,10 +282,10 @@ function SchemaField<T extends FieldValues>({
             <FormLabel className="text-xs">{cfg.label}</FormLabel>
             <FormControl>
               <Input
-                type={kind === 'date' ? 'date' : kind === 'email' ? 'email' : 'text'}
+                type={kind === 'email' ? 'email' : 'text'}
                 value={(field.value as string | null) ?? ''}
                 onChange={(e) => field.onChange(e.target.value === '' ? null : e.target.value)}
-                placeholder={kind === 'date' ? 'YYYY-MM-DD' : ''}
+                placeholder=""
               />
             </FormControl>
             <FormMessage />
@@ -280,3 +295,7 @@ function SchemaField<T extends FieldValues>({
     />
   );
 }
+
+// Radix Select rejects empty-string item values. Sentinel stays client-side
+// only; onValueChange maps it back to null before RHF sees it.
+const TRIBOOL_UNSET = '__unset';

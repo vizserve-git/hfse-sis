@@ -1,15 +1,4 @@
-'use client';
-
 import { Workflow } from 'lucide-react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
 
 import type { PipelineStage } from '@/lib/sis/dashboard';
 import {
@@ -20,10 +9,12 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { ComparisonBarChart } from '@/components/dashboard/charts/comparison-bar-chart';
 
 export function PipelineStageChart({ data }: { data: PipelineStage[] }) {
   const total = data.reduce((sum, s) => sum + s.count, 0);
   const empty = total === 0;
+  const chartData = data.map((d) => ({ category: d.label, current: d.count }));
 
   return (
     <Card>
@@ -50,52 +41,7 @@ export function PipelineStageChart({ data }: { data: PipelineStage[] }) {
             </p>
           </div>
         ) : (
-          <div className="h-[340px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={data}
-                layout="vertical"
-                margin={{ top: 8, right: 24, bottom: 8, left: 8 }}
-              >
-                <CartesianGrid
-                  horizontal={false}
-                  stroke="var(--border)"
-                  strokeDasharray="3 3"
-                />
-                <XAxis
-                  type="number"
-                  stroke="var(--muted-foreground)"
-                  fontSize={12}
-                  allowDecimals={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="label"
-                  stroke="var(--muted-foreground)"
-                  fontSize={12}
-                  tickLine={false}
-                  width={110}
-                />
-                <Tooltip
-                  cursor={{ fill: 'var(--accent)' }}
-                  contentStyle={{
-                    background: 'var(--popover)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius)',
-                    color: 'var(--popover-foreground)',
-                    fontSize: 12,
-                  }}
-                />
-                <Bar
-                  dataKey="count"
-                  name="Students"
-                  fill="var(--chart-1)"
-                  radius={[0, 4, 4, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <ComparisonBarChart data={chartData} orientation="horizontal" height={340} />
         )}
       </CardContent>
     </Card>

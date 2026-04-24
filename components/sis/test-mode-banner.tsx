@@ -1,9 +1,9 @@
-import Link from 'next/link';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from "lucide-react";
+import Link from "next/link";
 
-import { getCurrentAcademicYear } from '@/lib/academic-year';
-import { isTestAyCode } from '@/lib/sis/environment';
-import { createClient } from '@/lib/supabase/server';
+import { getCurrentAcademicYear } from "@/lib/academic-year";
+import { isTestAyCode } from "@/lib/sis/environment";
+import { createClient } from "@/lib/supabase/server";
 
 // Renders a thin amber strip at the top of every authenticated module
 // shell when the active academic year is a test environment (ay_code
@@ -21,16 +21,12 @@ export async function TestModeBanner() {
     <div
       role="status"
       aria-live="polite"
-      className="flex shrink-0 items-center justify-center gap-2 border-b border-brand-amber/40 bg-brand-amber-light px-4 py-1.5 text-[12px] font-medium text-ink print:hidden"
-    >
+      className="flex shrink-0 items-center justify-center gap-2 border-b border-brand-amber/40 bg-brand-amber-light px-4 py-1.5 text-[12px] font-semibold text-ink print:hidden">
       <AlertTriangle className="size-3.5 shrink-0 text-brand-amber" aria-hidden="true" />
-      <span>
-        Test environment — data here is disposable.
-      </span>
+      <span>Test environment — data here is disposable.</span>
       <Link
         href="/sis/admin/settings"
-        className="underline decoration-dotted underline-offset-4 hover:decoration-solid"
-      >
+        className="underline decoration-dotted underline-offset-4 hover:decoration-solid">
         Switch to Production
       </Link>
     </div>

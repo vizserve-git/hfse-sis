@@ -1,9 +1,13 @@
-import Link from 'next/link';
-import { redirect } from 'next/navigation';
-import { ArrowUpRight, ClipboardCheck, NotebookPen, SquarePen } from 'lucide-react';
+import { ArrowUpRight, CheckCircle2, ClipboardCheck, Clock, NotebookPen, SquarePen, TrendingUp } from "lucide-react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { createClient, getSessionUser } from '@/lib/supabase/server';
-import { createServiceClient } from '@/lib/supabase/service';
+import { TrendChart } from "@/components/dashboard/charts/trend-chart";
+import { ComparisonToolbar } from "@/components/dashboard/comparison-toolbar";
+import { DashboardHero } from "@/components/dashboard/dashboard-hero";
+import { InsightsPanel } from "@/components/dashboard/insights-panel";
+import { MetricCard } from "@/components/dashboard/metric-card";
+import { TermOpenToggle } from "@/components/evaluation/term-open-toggle";
 import {
   Card,
   CardAction,
@@ -12,39 +16,41 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { PageShell } from '@/components/ui/page-shell';
-import { TermOpenToggle } from '@/components/evaluation/term-open-toggle';
+} from "@/components/ui/card";
+import { PageShell } from "@/components/ui/page-shell";
+import { evaluationInsights } from "@/lib/dashboard/insights";
+import { formatRangeLabel, resolveRange, type DashboardSearchParams } from "@/lib/dashboard/range";
+import { getDashboardWindows } from "@/lib/dashboard/windows";
+import { getEvaluationKpisRange, getSubmissionVelocityRange } from "@/lib/evaluation/dashboard";
+import { createClient, getSessionUser } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 
 // Evaluation module landing page. The real work happens on /evaluation/sections
 // (Bite 4) — this page is a light orientation surface describing what the
 // module does + jumping into the writeup roster.
-export default async function EvaluationHub() {
+export default async function EvaluationHub({ searchParams }: { searchParams: Promise<DashboardSearchParams> }) {
   const sessionUser = await getSessionUser();
-  if (!sessionUser) redirect('/login');
+  if (!sessionUser) redirect("/login");
+  const resolvedSearch = await searchParams;
 
   const canToggle =
-    sessionUser.role === 'registrar' ||
-    sessionUser.role === 'school_admin' ||
-    sessionUser.role === 'admin' ||
-    sessionUser.role === 'superadmin';
+    sessionUser.role === "registrar" ||
+    sessionUser.role === "school_admin" ||
+    sessionUser.role === "admin" ||
+    sessionUser.role === "superadmin";
 
   // Current AY → its T1-T3 terms + window state. Cheap query + used only
   // by the toggle strip on this page.
   const supabase = await createClient();
   const service = createServiceClient();
-  const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id')
-    .eq('is_current', true)
-    .maybeSingle();
+  const { data: ay } = await supabase.from("academic_years").select("id, ay_code").eq("is_current", true).maybeSingle();
   const { data: termRows } = ay
     ? await supabase
-        .from('terms')
-        .select('id, label, term_number, is_current, virtue_theme')
-        .eq('academic_year_id', ay.id)
-        .neq('term_number', 4)
-        .order('term_number', { ascending: true })
+        .from("terms")
+        .select("id, label, term_number, is_current, virtue_theme")
+        .eq("academic_year_id", ay.id)
+        .neq("term_number", 4)
+        .order("term_number", { ascending: true })
     : { data: [] };
   type TermLite = {
     id: string;
@@ -58,33 +64,121 @@ export default async function EvaluationHub() {
   const { data: evalTermRows } =
     terms.length > 0
       ? await service
-          .from('evaluation_terms')
-          .select('term_id, is_open')
-          .in('term_id', terms.map((t) => t.id))
+          .from("evaluation_terms")
+          .select("term_id, is_open")
+          .in(
+            "term_id",
+            terms.map((t) => t.id),
+          )
       : { data: [] };
   const openByTerm = new Map<string, boolean>(
-    ((evalTermRows ?? []) as Array<{ term_id: string; is_open: boolean }>).map((r) => [
-      r.term_id,
-      r.is_open,
-    ]),
+    ((evalTermRows ?? []) as Array<{ term_id: string; is_open: boolean }>).map((r) => [r.term_id, r.is_open]),
   );
+
+  // Dashboard band — current AY only.
+  const ayCode = ay?.ay_code ?? "";
+  const windows = ayCode
+    ? await getDashboardWindows(ayCode)
+    : { term: { thisTerm: null, lastTerm: null }, ay: { thisAY: null, lastAY: null } };
+  const rangeInput = ayCode ? resolveRange(resolvedSearch, windows, ayCode) : null;
+  const [kpisResult, velocity] = rangeInput
+    ? await Promise.all([getEvaluationKpisRange(rangeInput), getSubmissionVelocityRange(rangeInput)])
+    : [null, null];
+  const comparisonLabel = rangeInput
+    ? `vs ${formatRangeLabel({ from: rangeInput.cmpFrom, to: rangeInput.cmpTo })}`
+    : "";
+
+  const insights = kpisResult
+    ? evaluationInsights({
+        submissionPct: kpisResult.current.submissionPct,
+        submitted: kpisResult.current.submitted,
+        expected: kpisResult.current.expected,
+        medianTimeToSubmitDays: kpisResult.current.medianTimeToSubmitDays,
+        medianTimeToSubmitDaysPrior: kpisResult.comparison.medianTimeToSubmitDays,
+        lateSubmissions: kpisResult.current.lateSubmissions,
+      })
+    : [];
 
   return (
     <PageShell>
-      <header className="space-y-3">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Student Evaluation · Hub
-        </p>
-        <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-          Form class adviser write-ups.
-        </h1>
-        <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          One paragraph per student per term, guided by the virtue theme the registrar set in SIS
-          Admin. The write-up is the sole source of the &ldquo;Form Class Adviser&rsquo;s
-          Comments&rdquo; field on T1&ndash;T3 report cards. T4 report cards have no comment
-          section; the module is inactive for T4.
-        </p>
-      </header>
+      <DashboardHero
+        eyebrow="Student Evaluation · Hub"
+        title="Form class adviser write-ups"
+        description="One paragraph per student per term, guided by the term's virtue theme. Sole source for T1–T3 report card comments. T4 is inactive."
+        badges={ayCode ? [{ label: ayCode }] : []}
+      />
+
+      {rangeInput && kpisResult && velocity && (
+        <>
+          <ComparisonToolbar
+            ayCode={ayCode}
+            ayCodes={[ayCode]}
+            range={{ from: rangeInput.from, to: rangeInput.to }}
+            comparison={{ from: rangeInput.cmpFrom, to: rangeInput.cmpTo }}
+            termWindows={windows.term}
+            ayWindows={windows.ay}
+            showAySwitcher={false}
+          />
+
+          {insights.length > 0 && <InsightsPanel insights={insights} />}
+
+          <section className="grid gap-4 xl:grid-cols-4">
+            <MetricCard
+              label="Submission %"
+              value={kpisResult.current.submissionPct}
+              format="percent"
+              icon={TrendingUp}
+              intent={kpisResult.current.submissionPct >= 80 ? "good" : "warning"}
+              delta={kpisResult.delta}
+              deltaGoodWhen="up"
+              comparisonLabel={comparisonLabel}
+              sparkline={velocity.current.slice(-14)}
+            />
+            <MetricCard
+              label="Submitted"
+              value={kpisResult.current.submitted}
+              icon={CheckCircle2}
+              intent="default"
+              subtext={`of ${kpisResult.current.expected} expected`}
+            />
+            <MetricCard
+              label="Median time-to-submit"
+              value={kpisResult.current.medianTimeToSubmitDays ?? "—"}
+              format="days"
+              icon={Clock}
+              intent="default"
+              deltaGoodWhen="down"
+              subtext={
+                kpisResult.comparison.medianTimeToSubmitDays != null
+                  ? `${kpisResult.comparison.medianTimeToSubmitDays}d prior`
+                  : "No prior data"
+              }
+            />
+            <MetricCard
+              label="Late submissions"
+              value={kpisResult.current.lateSubmissions}
+              icon={Clock}
+              intent={kpisResult.current.lateSubmissions > 0 ? "warning" : "good"}
+              deltaGoodWhen="down"
+              subtext={`${kpisResult.comparison.lateSubmissions} prior`}
+            />
+          </section>
+
+          {velocity.current.length > 1 && (
+            <Card>
+              <CardHeader>
+                <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  Submission velocity
+                </CardDescription>
+                <CardTitle className="font-serif text-xl">Write-ups submitted per day</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <TrendChart label="Submissions" current={velocity.current} comparison={velocity.comparison} />
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
 
       <section className="grid gap-4 md:grid-cols-2">
         <HubCard
@@ -115,15 +209,10 @@ export default async function EvaluationHub() {
           </h2>
           <div className="divide-y divide-border rounded-xl border border-border bg-card">
             {terms.map((t) => (
-              <div
-                key={t.id}
-                className="flex items-center justify-between gap-4 px-5 py-3"
-              >
+              <div key={t.id} className="flex items-center justify-between gap-4 px-5 py-3">
                 <div>
                   <div className="flex items-baseline gap-2">
-                    <span className="font-serif text-[15px] font-semibold text-foreground">
-                      {t.label}
-                    </span>
+                    <span className="font-serif text-[15px] font-semibold text-foreground">{t.label}</span>
                     {t.is_current && (
                       <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-primary">
                         current
@@ -131,9 +220,7 @@ export default async function EvaluationHub() {
                     )}
                   </div>
                   <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                    {t.virtue_theme
-                      ? `Virtue: ${t.virtue_theme}`
-                      : 'Virtue theme not set'}
+                    {t.virtue_theme ? `Virtue: ${t.virtue_theme}` : "Virtue theme not set"}
                   </div>
                 </div>
                 <TermOpenToggle
@@ -175,14 +262,12 @@ function HubCard({
 }) {
   return (
     <Link href={href}>
-      <Card className="@container/card h-full transition-all hover:border-brand-indigo/40 hover:shadow-sm">
+      <Card className="@container/card h-full transition-all hover:-translate-y-0.5 hover:border-brand-indigo/40 hover:shadow-md">
         <CardHeader>
           <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
             {eyebrow}
           </CardDescription>
-          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">
-            {title}
-          </CardTitle>
+          <CardTitle className="font-serif text-xl font-semibold tracking-tight text-foreground">{title}</CardTitle>
           <CardAction>
             <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
               <Icon className="size-4" />

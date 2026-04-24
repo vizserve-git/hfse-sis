@@ -1,27 +1,47 @@
 import { redirect } from 'next/navigation';
 
-import { studentNumberFromEnroleeNumber } from '@/lib/sis/records-history';
+import {
+  findStudentByNumber,
+  studentNumberFromEnroleeNumber,
+} from '@/lib/sis/records-history';
 
 // Legacy redirect: /records/students/[enroleeNumber] → either the new
 // cross-year permanent URL (/records/students/[studentNumber]) when the
-// applicant is enrolled, or /admissions/applications/[enroleeNumber] when
-// the applicant is still pre-enrolment.
+// student is actually in the grading schema, or
+// /admissions/applications/[enroleeNumber]?ay=<ayCode> when they're
+// pre-enrolment OR historically-enrolled but never synced into
+// public.students (legacy data pattern — Records 404s on those without
+// the grading-schema presence check).
 //
 // Records no longer hosts the AY-scoped applicant detail — that moved to
 // /admissions/applications/[enroleeNumber] per the 2026-04-23 module split.
 export default async function LegacyEnroleeRedirect({
   params,
+  searchParams,
 }: {
   params: Promise<{ enroleeNumber: string }>;
+  searchParams: Promise<{ ay?: string }>;
 }) {
   const { enroleeNumber } = await params;
+  const { ay } = await searchParams;
   const { studentNumber } = await studentNumberFromEnroleeNumber(enroleeNumber);
 
+  // Only send to Records when BOTH (a) the admissions row has a
+  // studentNumber AND (b) public.students actually has that row. Legacy
+  // prod data often has a studentNumber on admissions rows whose student
+  // never got synced into the grading schema — those 404 on the Records
+  // page, so fall through to Admissions instead.
   if (studentNumber) {
-    // Enrolled (has studentNumber) → cross-year Records URL.
-    redirect(`/records/students/${encodeURIComponent(studentNumber)}`);
+    const presentInGradingSchema = await findStudentByNumber(studentNumber);
+    if (presentInGradingSchema) {
+      redirect(`/records/students/${encodeURIComponent(studentNumber)}`);
+    }
   }
-  // No studentNumber means the applicant hasn't been assigned yet — still
-  // in the admissions funnel. Send them to Admissions.
-  redirect(`/admissions/applications/${encodeURIComponent(enroleeNumber)}`);
+
+  // Either no studentNumber (still in the admissions funnel) OR the
+  // studentNumber is admissions-only legacy. Either way, Admissions is
+  // the right destination. Thread `?ay=` so the AY-scoped lookup hits
+  // the right table.
+  const qs = ay ? `?ay=${encodeURIComponent(ay)}` : '';
+  redirect(`/admissions/applications/${encodeURIComponent(enroleeNumber)}${qs}`);
 }
